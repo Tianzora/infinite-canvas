@@ -19,6 +19,7 @@ export default function RootLayout({
     return (
         <html lang="zh-CN" suppressHydrationWarning className="font-sans">
             <body
+                suppressHydrationWarning
                 className="bg-background text-foreground antialiased"
                 style={{
                     fontFamily: '"SF Pro Display","SF Pro Text","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif',

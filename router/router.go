@@ -77,6 +77,9 @@ func New() *gin.Engine {
 		handler.AdminDeleteAsset(c.Writer, c.Request, c.Param("id"))
 	})
 
+	registerCouponRoutes(api, admin)
+	registerAnnouncementRoutes(api, admin)
+
 	router.NoRoute(middleware.NotFoundJSON)
 
 	return router

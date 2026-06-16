@@ -24,6 +24,8 @@ description: 当前后端主要数据表与字段说明
 - `prompts`
 - `assets`
 - `settings`
+- `coupons`
+- `announcements`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
 
@@ -154,6 +156,7 @@ description: 当前后端主要数据表与字段说明
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |
+| `prefix` | string | 模型前缀，前台可用模型列表会自动拼接前缀，转发上游时剥离 |
 | `models` | string[] | 渠道可用模型列表 |
 | `weight` | number | 渠道权重，同一模型命中多个渠道时按权重随机 |
 | `enabled` | bool | 是否启用 |
@@ -198,3 +201,32 @@ description: 当前后端主要数据表与字段说明
 | `admin_adjust` | 后台手动调整 |
 | `ai_consume` | 调用后端模型接口消费 |
 | `ai_refund` | 后端模型接口调用失败返还 |
+| `redeem` | 兑换码兑换 |
+
+### coupons
+
+兑换码表。后台批量生成兑换码，前台用户输入码兑换算力点。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `code` | string | 兑换码，唯一索引 |
+| `credits` | number | 兑换额度 |
+| `used_by` | string | 使用者用户 ID，未使用为空 |
+| `used_at` | string | 使用时间，未使用为空 |
+| `expires_at` | string | 过期时间，为空表示永不过期 |
+| `is_active` | bool | 是否启用 |
+| `created_at` | string | 创建时间 |
+
+### announcements
+
+系统公告表。后台发布和管理公告，前台展示启用状态的公告。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `title` | string | 标题 |
+| `content` | text | 公告内容 |
+| `active` | bool | 是否启用 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |

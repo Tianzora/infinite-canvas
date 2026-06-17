@@ -2,7 +2,7 @@
 
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Divider, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
@@ -22,11 +22,16 @@ const statusOptions = [
 ];
 
 export default function AdminUsersPage() {
+    const { message } = App.useApp();
     const { users, keyword, page, pageSize, total, isLoading, searchUsers, changePage, changePageSize, resetFilters, refreshUsers, saveUser: saveAdminUser, adjustCredits, deleteUser } = useAdminUsers();
     const [form] = Form.useForm<UserFormValues>();
+    const [batchForm] = Form.useForm<{ credits: number }>();
     const [keywordText, setKeywordText] = useState(keyword);
     const [editingUser, setEditingUser] = useState<Partial<AdminUser> | null>(null);
     const [deletingUser, setDeletingUser] = useState<AdminUser | null>(null);
+    const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+    const [batchCreditsOpen, setBatchCreditsOpen] = useState(false);
+    const [batchProcessing, setBatchProcessing] = useState(false);
 
     useEffect(() => setKeywordText(keyword), [keyword]);
 
@@ -45,6 +50,35 @@ export default function AdminUsersPage() {
     const saveCredits = async () => {
         if (!editingUser?.id) return;
         await adjustCredits(editingUser.id, form.getFieldValue("credits") || 0);
+    };
+
+    const handleBatchCredits = async () => {
+        const values = await batchForm.validateFields();
+        const delta = values.credits;
+        if (!delta || delta === 0) {
+            message.warning("请输入调整数量");
+            return;
+        }
+        setBatchProcessing(true);
+        let success = 0;
+        let failed = 0;
+        for (const id of selectedRowKeys) {
+            try {
+                const user = users.find((u) => u.id === id);
+                const current = user?.credits ?? 0;
+                const next = Math.max(0, current + delta);
+                await adjustCredits(id, next);
+                success++;
+            } catch {
+                failed++;
+            }
+        }
+        setBatchProcessing(false);
+        setBatchCreditsOpen(false);
+        batchForm.resetFields();
+        setSelectedRowKeys([]);
+        if (success > 0) message.success(`已调整 ${success} 个用户的算力点`);
+        if (failed > 0) message.error(`${failed} 个用户调整失败`);
     };
 
     const columns: ProColumns<AdminUser>[] = [
@@ -122,31 +156,20 @@ export default function AdminUsersPage() {
                         <Row gutter={16} align="bottom">
                             <Col flex="360px">
                                 <Form.Item label="关键词">
-                                    <Input.Search
-                                        value={keywordText}
-                                        placeholder="搜索用户名、昵称、邮箱或 Linux.do ID"
-                                        allowClear
-                                        enterButton={<SearchOutlined />}
-                                        onSearch={() => searchUsers(keywordText)}
-                                        onChange={(event) => setKeywordText(event.target.value)}
-                                    />
+                                    <Input.Search value={keywordText} placeholder="搜索用户名或昵称" allowClear enterButton={<SearchOutlined />} onSearch={() => searchUsers(keywordText)} onChange={(event) => setKeywordText(event.target.value)} />
                                 </Form.Item>
                             </Col>
                             <Col flex="none">
                                 <Form.Item>
-                                    <Space>
-                                        <Button
-                                            onClick={() => {
-                                                setKeywordText("");
-                                                resetFilters();
-                                            }}
-                                        >
-                                            重置
-                                        </Button>
-                                        <Button type="primary" icon={<ReloadOutlined />} onClick={() => searchUsers(keywordText)}>
-                                            查询
-                                        </Button>
-                                    </Space>
+                                    <Button
+                                        icon={<ReloadOutlined />}
+                                        onClick={() => {
+                                            setKeywordText("");
+                                            resetFilters();
+                                        }}
+                                    >
+                                        重置
+                                    </Button>
                                 </Form.Item>
                             </Col>
                         </Row>
@@ -161,14 +184,24 @@ export default function AdminUsersPage() {
                     defaultSize="middle"
                     tableLayout="fixed"
                     cardProps={{ variant: "borderless" }}
+                    rowSelection={{
+                        selectedRowKeys,
+                        onChange: (keys) => setSelectedRowKeys(keys as string[]),
+                    }}
                     headerTitle={
                         <Space>
                             <Typography.Text strong>用户列表</Typography.Text>
                             <Tag>{total} 人</Tag>
+                            {selectedRowKeys.length > 0 ? <Tag color="blue">已选 {selectedRowKeys.length} 人</Tag> : null}
                         </Space>
                     }
                     options={{ density: true, setting: true, reload: () => void refreshUsers() }}
                     toolBarRender={() => [
+                        selectedRowKeys.length > 0 ? (
+                            <Button key="batchCredits" onClick={() => setBatchCreditsOpen(true)}>
+                                批量调整算力点
+                            </Button>
+                        ) : null,
                         <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => setEditingUser({ role: "user", status: "active" })}>
                             新增
                         </Button>,
@@ -255,6 +288,27 @@ export default function AdminUsersPage() {
                 cancelText="取消"
             >
                 确定删除「{deletingUser?.displayName || deletingUser?.username}」吗？删除后该账号将无法继续登录。
+            </Modal>
+
+            <Modal
+                title={`批量调整算力点（已选 ${selectedRowKeys.length} 人）`}
+                open={batchCreditsOpen}
+                onCancel={() => {
+                    setBatchCreditsOpen(false);
+                    batchForm.resetFields();
+                }}
+                onOk={() => void handleBatchCredits()}
+                okText="确认调整"
+                cancelText="取消"
+                confirmLoading={batchProcessing}
+                destroyOnHidden
+            >
+                <Form form={batchForm} layout="vertical" requiredMark={false}>
+                    <Form.Item name="credits" label="调整数量" rules={[{ required: true, message: "请输入调整数量" }]}>
+                        <InputNumber precision={0} style={{ width: "100%" }} placeholder="正数增加，负数减少" />
+                    </Form.Item>
+                    <Typography.Text type="secondary">输入正数为所有选中用户增加算力点，输入负数则减少。减少时不会低于 0。</Typography.Text>
+                </Form>
             </Modal>
         </main>
     );

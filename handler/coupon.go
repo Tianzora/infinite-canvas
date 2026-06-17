@@ -39,6 +39,17 @@ func AdminCoupons(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+
+func AdminDeleteCoupons(w http.ResponseWriter, r *http.Request) {
+	var request adminBatchDeleteRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	if err := service.DeleteCoupons(request.IDs); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
 func RedeemCoupon(w http.ResponseWriter, r *http.Request) {
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {

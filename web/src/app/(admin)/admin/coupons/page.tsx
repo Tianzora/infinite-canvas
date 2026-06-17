@@ -1,8 +1,8 @@
 "use client";
 
-import { CopyOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CopyOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Tooltip, Typography } from "antd";
+import { App, Button, Card, Col, Flex, Form, Input, InputNumber, Modal, Row, Select, Space, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
 
@@ -17,11 +17,12 @@ const statusOptions = [
 
 export default function AdminCouponsPage() {
     const { message } = App.useApp();
-    const { coupons, keyword, status, page, pageSize, total, isLoading, searchCoupons, changeStatus, changePage, changePageSize, resetFilters, refreshCoupons, generateCoupons } = useAdminCoupons();
+    const { coupons, keyword, status, page, pageSize, total, isLoading, searchCoupons, changeStatus, changePage, changePageSize, resetFilters, refreshCoupons, generateCoupons, deleteCoupons } = useAdminCoupons();
     const [form] = Form.useForm<{ count: number; credits: number; expiresAt: string }>();
     const [keywordText, setKeywordText] = useState(keyword);
     const [isGenerateOpen, setIsGenerateOpen] = useState(false);
     const [generatedCodes, setGeneratedCodes] = useState<Coupon[]>([]);
+    const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
 
     useEffect(() => setKeywordText(keyword), [keyword]);
 
@@ -37,6 +38,42 @@ export default function AdminCouponsPage() {
         const text = generatedCodes.map((c) => c.code).join("\n");
         navigator.clipboard.writeText(text);
         message.success("已复制全部兑换码");
+    };
+
+    const handleExportTxt = () => {
+        const lines = coupons.map((c) => {
+            const status = c.usedBy ? "已使用" : "未使用";
+            return `${c.code}\t${c.credits}\t${status}\t${c.usedBy || "-"}\t${c.usedAt ? dayjs(c.usedAt).format("YYYY-MM-DD HH:mm:ss") : "-"}\t${c.createdAt ? dayjs(c.createdAt).format("YYYY-MM-DD HH:mm:ss") : "-"}`;
+        });
+        const header = "兑换码\t额度\t状态\t使用者\t使用时间\t创建时间";
+        const content = [header, ...lines].join("\n");
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `兑换码_${dayjs().format("YYYYMMDD_HHmmss")}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+        message.success("导出成功");
+    };
+
+    const handleBatchDeleteUnused = async () => {
+        const unusedSelected = coupons.filter((c) => selectedRowKeys.includes(c.id) && !c.usedBy);
+        if (unusedSelected.length === 0) {
+            message.warning("选中的兑换码中没有未使用的");
+            return;
+        }
+        Modal.confirm({
+            title: "批量删除",
+            content: `确定删除选中的 ${unusedSelected.length} 个未使用兑换码吗？此操作不可撤销。`,
+            okText: "删除",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: async () => {
+                await deleteCoupons(unusedSelected.map((c) => c.id));
+                setSelectedRowKeys([]);
+            },
+        });
     };
 
     const columns: ProColumns<Coupon>[] = [
@@ -122,14 +159,27 @@ export default function AdminCouponsPage() {
                     defaultSize="middle"
                     tableLayout="fixed"
                     cardProps={{ variant: "borderless" }}
+                    rowSelection={{
+                        selectedRowKeys,
+                        onChange: (keys) => setSelectedRowKeys(keys as string[]),
+                    }}
                     headerTitle={
                         <Space>
                             <Typography.Text strong>兑换码列表</Typography.Text>
                             <Tag>{total} 条</Tag>
+                            {selectedRowKeys.length > 0 ? <Tag color="blue">已选 {selectedRowKeys.length} 项</Tag> : null}
                         </Space>
                     }
                     options={{ density: true, setting: true, reload: () => void refreshCoupons() }}
                     toolBarRender={() => [
+                        <Button key="export" icon={<DownloadOutlined />} onClick={handleExportTxt}>
+                            导出
+                        </Button>,
+                        selectedRowKeys.length > 0 ? (
+                            <Button key="batchDelete" danger icon={<DeleteOutlined />} onClick={handleBatchDeleteUnused}>
+                                删除选中未使用
+                            </Button>
+                        ) : null,
                         <Button key="generate" type="primary" icon={<PlusOutlined />} onClick={() => setIsGenerateOpen(true)}>
                             批量生成
                         </Button>,

@@ -230,3 +230,24 @@ description: 当前后端主要数据表与字段说明
 | `active` | bool | 是否启用 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
+
+
+
+
+### releases
+
+本地版本更新记录表。后台维护和 AI 自动生成的版本更新，前台展示启用状态的记录。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `version` | string | 版本号，唯一索引 |
+| `title` | string | 标题 |
+| `release_date` | string | 发布日期 |
+| `items` | json | 更新条目列表，每项含 `type` 和 `content` |
+| `summary` | text | 摘要 |
+| `source` | string | 来源：`manual`、`ai_record` |
+| `active` | bool | 是否启用 |
+| `created_by` | string | 创建者 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |

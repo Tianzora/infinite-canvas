@@ -80,7 +80,10 @@ func New() *gin.Engine {
 	registerCouponRoutes(api, admin)
 	registerAnnouncementRoutes(api, admin)
 
+	registerReleaseRoutes(api, admin)
+
 	router.NoRoute(middleware.NotFoundJSON)
 
 	return router
 }
+

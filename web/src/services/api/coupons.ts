@@ -33,3 +33,7 @@ export async function generateCoupons(token: string, params: GenerateCouponsPara
 export async function redeemCoupon(code: string, token: string) {
     return apiPost<{ balance: number }>("/api/coupons/redeem", { code }, token);
 }
+
+export async function deleteCoupons(token: string, ids: string[]) {
+    return apiPost<boolean>("/api/admin/coupons/batch-delete", { ids }, token);
+}

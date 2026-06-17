@@ -99,3 +99,12 @@ type couponError struct {
 
 func (e *couponError) Error() string   { return e.message }
 func (e *couponError) SafeMessage() string { return e.message }
+
+// DeleteCouponsByIDs 批量删除兑换码。
+func DeleteCouponsByIDs(ids []string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Delete(&model.Coupon{}, "id IN ?", ids).Error
+}

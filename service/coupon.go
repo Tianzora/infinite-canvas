@@ -88,6 +88,14 @@ func RedeemCoupon(userID string, code string) (int, error) {
 	return user.Credits, nil
 }
 
+
+// DeleteCoupons 批量删除兑换码。
+func DeleteCoupons(ids []string) error {
+	if len(ids) == 0 {
+		return safeMessageError{message: "请选择要删除的兑换码"}
+	}
+	return repository.DeleteCouponsByIDs(ids)
+}
 func generateUniqueCode() (string, error) {
 	for i := 0; i < 20; i++ {
 		code, err := randomCode()

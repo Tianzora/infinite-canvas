@@ -71,6 +71,7 @@ func DB() (*gorm.DB, error) {
 			&model.Setting{},
 			&model.Coupon{},
 			&model.Announcement{},
+		&model.Release{},
 		)
 	})
 	return db, dbErr
@@ -179,3 +180,4 @@ func isPostgresError(err error, code string) bool {
 func quoteMySQLIdentifier(name string) string {
 	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
+

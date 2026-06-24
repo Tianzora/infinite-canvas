@@ -14,3 +14,6 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 算力点购买入口：后台系统设置可配置“充值链接”；前台兑换码弹窗和算力点记录弹窗在链接非空时显示购买按钮并新窗口打开。
 - 管理员一键更新：系统设置页维护区域可触发 `POST /api/admin/system/update`；已配置 Docker compose 更新环境时拉取 `ghcr.io/fairchildovo/infinite-canvas` 并重建容器，未配置时返回明确错误。
 - 算力点空投备注：管理员手动调增用户算力点产生的 `admin_adjust` 记录备注应为“空投”；扣减不应写成“空投”。
+- Agnes 模型接入：`agnes-image-*` 应支持文生图和图生图，图生图走 `/images/generations` 而不是 `/images/edits`；`agnes-video-*` 应支持文生视频和图生视频，并优先使用 `/agnesapi?video_id=...` 轮询。
+- Agnes 图片尺寸：选择 Agnes 图片模型后，生图工作台和画布图片生成参数面板应继续使用原尺寸界面，并自动开启已有“16倍数对齐”；自定义显示名也应按 Agnes raw model 识别尺寸限制，并允许 `4096x4096`。
+- Agnes 图生视频公网参考图：本地参考图只复用现有 `PUBLIC_BASE_URL + /api/media/references/*` 生成公网 URL，不新增对象存储或额外公网服务；生产部署需确认运行容器内存在 `PUBLIC_BASE_URL=https://canvas.tianzora.uno`。

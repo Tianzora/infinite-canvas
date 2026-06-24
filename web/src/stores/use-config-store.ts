@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
+import { isAgnesImageModel, isAgnesVideoModel } from "@/lib/agnes-model";
 import { apiGet } from "@/services/api/request";
 import type { AdminPublicSettings } from "@/services/api/admin";
 
@@ -119,14 +120,14 @@ function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSetti
     const channelMode = modelChannel?.allowCustomChannel ? config.channelMode : "remote";
     if (channelMode === "local" || !modelChannel) return { ...config, channelMode };
     const models = modelChannel.availableModels;
-    const textModels = filterModelsByCapability(models, "text");
-    const imageModels = filterModelsByCapability(models, "image");
-    const videoModels = filterModelsByCapability(models, "video");
-    const audioModels = filterModelsByCapability(models, "audio");
-    const fallbackTextModel = validDefault(modelChannel.defaultTextModel, textModels) || preferredModel(textModels, isTextModelName);
+    const textModels = filterModelsByCapability(models, "text", modelChannel.modelAliases);
+    const imageModels = filterModelsByCapability(models, "image", modelChannel.modelAliases);
+    const videoModels = filterModelsByCapability(models, "video", modelChannel.modelAliases);
+    const audioModels = filterModelsByCapability(models, "audio", modelChannel.modelAliases);
+    const fallbackTextModel = validDefault(modelChannel.defaultTextModel, textModels) || preferredModel(textModels, (model) => isTextModelName(model, modelChannel.modelAliases));
     const fallbackModel = validDefault(modelChannel.defaultModel, textModels) || fallbackTextModel;
-    const fallbackImageModel = validDefault(modelChannel.defaultImageModel, imageModels) || preferredModel(imageModels, isImageModelName);
-    const fallbackVideoModel = validDefault(modelChannel.defaultVideoModel, videoModels) || preferredModel(videoModels, isVideoModelName);
+    const fallbackImageModel = validDefault(modelChannel.defaultImageModel, imageModels) || preferredModel(imageModels, (model) => isImageModelName(resolveRawModelName(model, modelChannel.modelAliases)));
+    const fallbackVideoModel = validDefault(modelChannel.defaultVideoModel, videoModels) || preferredModel(videoModels, (model) => isVideoModelName(resolveRawModelName(model, modelChannel.modelAliases)));
     const fallbackAudioModel = preferredModel(audioModels, isAudioModelName);
     return {
         ...config,
@@ -154,34 +155,36 @@ function preferredModel(models: string[], predicate: (model: string) => boolean)
 }
 
 function isVideoModelName(model: string) {
-    const value = modelOptionName(model).toLowerCase();
-    return value.includes("seedance") || value.includes("video") || value.includes("视频") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo");
+    const value = model.toLowerCase();
+    return isAgnesVideoModel(value) || value.includes("seedance") || value.includes("video") || value.includes("视频") || value.includes("sora") || value.includes("veo") || value.includes("kling") || value.includes("wan") || value.includes("hailuo");
 }
 
 function isImageModelName(model: string) {
-    const value = modelOptionName(model).toLowerCase();
-    return !isVideoModelName(model) && !isAudioModelName(model) && (value.includes("seedream") || value.includes("gpt-image") || value.includes("image") || value.includes("图片") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney"));
+    const value = model.toLowerCase();
+    return !isVideoModelName(model) && !isAudioModelName(model) && (isAgnesImageModel(value) || value.includes("seedream") || value.includes("gpt-image") || value.includes("image") || value.includes("图片") || value.includes("dall-e") || value.includes("dalle") || value.includes("imagen") || value.includes("flux") || value.includes("sdxl") || value.includes("stable-diffusion") || value.includes("midjourney"));
 }
 
 function isAudioModelName(model: string) {
-    const value = modelOptionName(model).toLowerCase();
+    const value = model.toLowerCase();
     return value.includes("audio") || value.includes("tts") || value.includes("speech") || value.includes("voice") || value.includes("music") || value.includes("sound");
 }
 
-function isTextModelName(model: string) {
-    return !isImageModelName(model) && !isVideoModelName(model) && !isAudioModelName(model);
+function isTextModelName(model: string, aliases?: AdminPublicSettings["modelChannel"]["modelAliases"]) {
+    const rawModel = resolveRawModelName(model, aliases);
+    return !isImageModelName(rawModel) && !isVideoModelName(rawModel) && !isAudioModelName(rawModel);
 }
 
-export function modelMatchesCapability(model: string, capability?: ModelCapability) {
+export function modelMatchesCapability(model: string, capability?: ModelCapability, aliases?: AdminPublicSettings["modelChannel"]["modelAliases"]) {
     if (!capability) return true;
-    if (capability === "image") return isImageModelName(model);
-    if (capability === "video") return isVideoModelName(model);
-    if (capability === "audio") return isAudioModelName(model);
-    return isTextModelName(model);
+    const rawModel = resolveRawModelName(model, aliases);
+    if (capability === "image") return isImageModelName(rawModel);
+    if (capability === "video") return isVideoModelName(rawModel);
+    if (capability === "audio") return isAudioModelName(rawModel);
+    return isTextModelName(rawModel);
 }
 
-export function filterModelsByCapability(models: string[], capability?: ModelCapability) {
-    return capability ? models.filter((model) => modelMatchesCapability(model, capability)) : models;
+export function filterModelsByCapability(models: string[], capability?: ModelCapability, aliases?: AdminPublicSettings["modelChannel"]["modelAliases"]) {
+    return capability ? models.filter((model) => modelMatchesCapability(model, capability, aliases)) : models;
 }
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
@@ -305,6 +308,11 @@ export function modelOptionName(value: string) {
     return decodeChannelModel(value)?.model || value;
 }
 
+export function resolveRawModelName(value: string, aliases?: AdminPublicSettings["modelChannel"]["modelAliases"]) {
+    const model = modelOptionName(value || "").trim();
+    return aliases?.find((item) => item.displayName.trim() === model)?.model.trim() || model;
+}
+
 export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
@@ -337,9 +345,10 @@ export function resolveModelChannel(config: AiConfig, value: string) {
 
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
     const channel = resolveModelChannel(config, value);
+    const aliases = config.channelMode === "remote" ? useConfigStore.getState().publicSettings?.modelChannel.modelAliases : undefined;
     return {
         ...config,
-        model: modelOptionName(value || config.model),
+        model: resolveRawModelName(value || config.model, aliases),
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
     };

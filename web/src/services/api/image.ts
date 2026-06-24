@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
+import { isAgnesImageModel } from "@/lib/agnes-model";
 import type { ReferenceImage } from "@/types/image";
 
 export type ChatCompletionMessage = {
@@ -95,6 +96,8 @@ const IMAGE_SIZE_STEP = 16;
 const IMAGE_MIN_PIXELS = 655360;
 const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
+const AGNES_IMAGE_MAX_EDGE = 4096;
+const AGNES_IMAGE_MAX_PIXELS = 4096 * 4096;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
 
@@ -105,7 +108,7 @@ function normalizeQuality(quality: string) {
 }
 
 /** Map "quality + ratio" to an explicit pixel dimension like "3840x2160". */
-function resolveSize(quality: string | undefined, ratio: string): string {
+function resolveSize(quality: string | undefined, ratio: string, model = ""): string {
     const parsedRatio = parseImageRatio(ratio);
     const basePixels = quality ? QUALITY_BASE[quality] : undefined;
     const isLandscape = parsedRatio.width >= parsedRatio.height;
@@ -125,7 +128,7 @@ function resolveSize(quality: string | undefined, ratio: string): string {
 
     const width = isLandscape ? longSide : shortSide;
     const height = isLandscape ? shortSide : longSide;
-    validateImageSize(width, height);
+    validateImageSize(width, height, model);
     return `${width}x${height}`;
 }
 
@@ -145,24 +148,26 @@ function parseImageDimensions(value: string) {
     return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-function validateImageSize(width: number, height: number) {
+function validateImageSize(width: number, height: number, model = "") {
+    const maxEdge = isAgnesImageModel(model) ? AGNES_IMAGE_MAX_EDGE : IMAGE_MAX_EDGE;
+    const maxPixels = isAgnesImageModel(model) ? AGNES_IMAGE_MAX_PIXELS : IMAGE_MAX_PIXELS;
     if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) throw new Error("图像尺寸必须是正整数，例如 1024x1024");
     if (width % IMAGE_SIZE_STEP !== 0 || height % IMAGE_SIZE_STEP !== 0) throw new Error("图像尺寸的宽高必须是 16 的倍数，请调整尺寸");
-    if (Math.max(width, height) > IMAGE_MAX_EDGE) throw new Error("图像尺寸最长边不能超过 3840px，请调整尺寸");
+    if (Math.max(width, height) > maxEdge) throw new Error(`图像尺寸最长边不能超过 ${maxEdge}px，请调整尺寸`);
     if (Math.max(width, height) / Math.min(width, height) > IMAGE_MAX_RATIO) throw new Error("图像宽高比不能超过 3:1，请调整尺寸");
     const pixels = width * height;
-    if (pixels < IMAGE_MIN_PIXELS || pixels > IMAGE_MAX_PIXELS) throw new Error("图像总像素需在 655360 到 8294400 之间，请调整尺寸");
+    if (pixels < IMAGE_MIN_PIXELS || pixels > maxPixels) throw new Error(`图像总像素需在 655360 到 ${maxPixels} 之间，请调整尺寸`);
 }
 
-function resolveRequestSize(quality: string | undefined, size: string) {
+function resolveRequestSize(quality: string | undefined, size: string, model = "") {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
     const dimensions = parseImageDimensions(value);
     if (dimensions) {
-        validateImageSize(dimensions.width, dimensions.height);
+        validateImageSize(dimensions.width, dimensions.height, model);
         return `${dimensions.width}x${dimensions.height}`;
     }
-    if (value.includes(":")) return resolveSize(quality, value);
+    if (value.includes(":")) return resolveSize(quality, value, model);
     throw new Error("图像尺寸格式不支持，请使用 auto、9:16 或 1024x1024");
 }
 
@@ -351,10 +356,27 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
 }
 
 export async function requestGeneration(config: AiConfig, prompt: string) {
+    config = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = resolveRequestSize(quality, config.size, config.model);
     try {
+        if (isAgnesImageModel(config.model)) {
+            const response = await axios.post<ImageApiResponse>(
+                aiApiUrl(config, "/images/generations"),
+                {
+                    model: config.model,
+                    prompt: withSystemPrompt(config, prompt),
+                    n,
+                    size: requestSize || "1024x1024",
+                    extra_body: { response_format: "b64_json" },
+                },
+                { headers: aiHeaders(config, "application/json") },
+            );
+            const images = parseImagePayload(response.data);
+            refreshRemoteUser(config);
+            return images;
+        }
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(config, "/images/generations"),
             {
@@ -379,10 +401,36 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage) {
+    config = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = resolveRequestSize(quality, config.size, config.model);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
+    if (isAgnesImageModel(config.model)) {
+        if (mask) throw new Error("Agnes 图片模型暂不支持蒙版编辑，请移除蒙版或切换到支持 /images/edits 的模型");
+        const images = await Promise.all(references.map((image) => imageToDataUrl(image)));
+        try {
+            const response = await axios.post<ImageApiResponse>(
+                aiApiUrl(config, "/images/generations"),
+                {
+                    model: config.model,
+                    prompt: withSystemPrompt(config, requestPrompt),
+                    n,
+                    size: requestSize || "1024x1024",
+                    extra_body: {
+                        image: images,
+                        response_format: "b64_json",
+                    },
+                },
+                { headers: aiHeaders(config, "application/json") },
+            );
+            const result = parseImagePayload(response.data);
+            refreshRemoteUser(config);
+            return result;
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
     const formData = new FormData();
     formData.set("model", config.model);
     formData.set("prompt", withSystemPrompt(config, requestPrompt));

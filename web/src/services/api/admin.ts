@@ -176,6 +176,7 @@ export type AdminModelAlias = {
 
 export type AdminPublicModelChannelSettings = {
     availableModels: string[];
+    modelAliases: AdminModelAlias[];
     modelCosts: AdminModelCost[];
     defaultModel: string;
     defaultImageModel: string;

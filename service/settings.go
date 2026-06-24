@@ -97,13 +97,14 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 	enabledModels := enabledChannelModels(channels)
 	if len(enabledModels) > 0 {
 		setting.ModelChannel.AvailableModels = enabledModels
+		setting.ModelChannel.ModelAliases = enabledChannelAliases(channels)
 	} else {
 		setting.ModelChannel.AvailableModels = uniqueModelNames(setting.ModelChannel.AvailableModels)
 	}
-	setting.ModelChannel.DefaultTextModel = repairDefaultModel(setting.ModelChannel.DefaultTextModel, setting.ModelChannel.AvailableModels, isTextModelName)
-	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, isImageModelName)
-	setting.ModelChannel.DefaultVideoModel = repairDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels, isVideoModelName)
-	setting.ModelChannel.DefaultModel = repairDefaultModel(setting.ModelChannel.DefaultModel, setting.ModelChannel.AvailableModels, isTextModelName)
+	setting.ModelChannel.DefaultTextModel = repairDefaultModel(setting.ModelChannel.DefaultTextModel, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAliases, isTextModelName)
+	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAliases, isImageModelName)
+	setting.ModelChannel.DefaultVideoModel = repairDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAliases, isVideoModelName)
+	setting.ModelChannel.DefaultModel = repairDefaultModel(setting.ModelChannel.DefaultModel, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAliases, isTextModelName)
 	return setting
 }
 
@@ -113,12 +114,19 @@ func ModelCost(modelName string) (int, error) {
 		return 0, err
 	}
 	modelName = strings.TrimSpace(modelName)
-	for _, item := range normalizePublicSetting(settings.Public).ModelChannel.ModelCosts {
-		if item.Model == modelName {
+	channel := normalizeSettings(settings).Public.ModelChannel
+	for _, item := range channel.ModelCosts {
+		if modelCostMatches(item.Model, modelName, channel.ModelAliases) {
 			return item.Credits, nil
 		}
 	}
 	return 0, nil
+}
+
+func modelCostMatches(costModel string, requestModel string, aliases []model.ModelAlias) bool {
+	costModel = strings.TrimSpace(costModel)
+	requestModel = strings.TrimSpace(requestModel)
+	return costModel != "" && (costModel == requestModel || resolveRawPublicModelName(costModel, aliases) == requestModel || resolveRawPublicModelName(requestModel, aliases) == costModel)
 }
 
 func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting {
@@ -252,6 +260,26 @@ func enabledChannelModels(channels []model.ModelChannel) []string {
 	return BuildPublicModelList(channels)
 }
 
+func enabledChannelAliases(channels []model.ModelChannel) []model.ModelAlias {
+	result := []model.ModelAlias{}
+	seen := map[string]bool{}
+	for _, channel := range normalizePrivateSetting(model.PrivateSetting{Channels: channels}).Channels {
+		if !channel.Enabled {
+			continue
+		}
+		for _, item := range channel.ModelAliases {
+			rawModel := strings.TrimSpace(item.Model)
+			displayName := strings.TrimSpace(item.DisplayName)
+			if rawModel == "" || displayName == "" || seen[displayName] {
+				continue
+			}
+			seen[displayName] = true
+			result = append(result, model.ModelAlias{Model: rawModel, DisplayName: displayName})
+		}
+	}
+	return result
+}
+
 func uniqueModelNames(models []string) []string {
 	result := []string{}
 	seen := map[string]bool{}
@@ -266,7 +294,7 @@ func uniqueModelNames(models []string) []string {
 	return result
 }
 
-func repairDefaultModel(current string, models []string, preferred func(string) bool) string {
+func repairDefaultModel(current string, models []string, aliases []model.ModelAlias, preferred func(string) bool) string {
 	current = strings.TrimSpace(current)
 	for _, item := range models {
 		if item == current {
@@ -274,7 +302,7 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 		}
 	}
 	for _, item := range models {
-		if preferred(item) {
+		if preferred(resolveRawPublicModelName(item, aliases)) {
 			return item
 		}
 	}
@@ -284,14 +312,24 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 	return ""
 }
 
+func resolveRawPublicModelName(name string, aliases []model.ModelAlias) string {
+	name = strings.TrimSpace(name)
+	for _, item := range aliases {
+		if strings.TrimSpace(item.DisplayName) == name {
+			return strings.TrimSpace(item.Model)
+		}
+	}
+	return name
+}
+
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "视频")
+	return strings.Contains(name, "agnes-video") || strings.Contains(name, "seedance") || strings.Contains(name, "video") || strings.Contains(name, "视频")
 }
 
 func isImageModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "图片")
+	return strings.Contains(name, "agnes-image") || strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image") || strings.Contains(name, "图片")
 }
 
 func isTextModelName(modelName string) bool {

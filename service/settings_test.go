@@ -6,8 +6,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
+	"github.com/basketikun/infinite-canvas/repository"
 )
 
 func TestFetchAdminChannelModelsParsesOpenAIModels(t *testing.T) {
@@ -149,6 +152,80 @@ func TestNormalizeSettingsPublishesDisplayModelAliasesAndRepairsDefaults(t *test
 	}
 	if channel.ModelCosts[0].Model != "即梦视频 2.0 Pro" {
 		t.Fatalf("model cost model = %q, want public display model", channel.ModelCosts[0].Model)
+	}
+	wantAliases := []model.ModelAlias{
+		{Model: "doubao-seedance-2.0-pro", DisplayName: "即梦视频 2.0 Pro"},
+		{Model: "doubao-seedream-5.0-lite", DisplayName: "即梦图片 Lite"},
+	}
+	if !reflect.DeepEqual(channel.ModelAliases, wantAliases) {
+		t.Fatalf("model aliases = %#v, want %#v", channel.ModelAliases, wantAliases)
+	}
+}
+
+func TestNormalizeSettingsClassifiesCustomAgnesDisplayNameByRawModel(t *testing.T) {
+	settings := normalizeSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{
+				DefaultModel:      "missing-text",
+				DefaultImageModel: "missing-image",
+			},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{
+					Enabled: true,
+					Models:  []string{"gpt-5.5", "agnes-image-2.1-flash"},
+					ModelAliases: []model.ModelAlias{
+						{Model: "agnes-image-2.1-flash", DisplayName: "创作A"},
+					},
+				},
+			},
+		},
+	})
+
+	channel := settings.Public.ModelChannel
+	if channel.DefaultModel != "gpt-5.5" {
+		t.Fatalf("default model = %q, want text model", channel.DefaultModel)
+	}
+	if channel.DefaultImageModel != "创作A" {
+		t.Fatalf("default image model = %q, want custom Agnes display name", channel.DefaultImageModel)
+	}
+	wantAliases := []model.ModelAlias{{Model: "agnes-image-2.1-flash", DisplayName: "创作A"}}
+	if !reflect.DeepEqual(channel.ModelAliases, wantAliases) {
+		t.Fatalf("model aliases = %#v, want %#v", channel.ModelAliases, wantAliases)
+	}
+}
+
+func TestModelCostMatchesRawModelThroughPublicAlias(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+	config.Cfg = config.Config{StorageDriver: "sqlite", DatabaseDSN: "file:model-cost-alias-test?mode=memory&cache=shared"}
+	_, err := repository.SaveSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{
+				ModelCosts: []model.ModelCost{{Model: "创作A", Credits: 7}},
+			},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{{
+				Enabled: true,
+				Models:  []string{"agnes-image-2.1-flash"},
+				ModelAliases: []model.ModelAlias{
+					{Model: "agnes-image-2.1-flash", DisplayName: "创作A"},
+				},
+			}},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	credits, err := ModelCost("agnes-image-2.1-flash")
+	if err != nil {
+		t.Fatalf("ModelCost returned error: %v", err)
+	}
+	if credits != 7 {
+		t.Fatalf("credits = %d, want alias display cost", credits)
 	}
 }
 

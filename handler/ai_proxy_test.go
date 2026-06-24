@@ -19,6 +19,7 @@ import (
 
 type capturedAIRequest struct {
 	path          string
+	rawQuery      string
 	authorization string
 	body          []byte
 }
@@ -32,6 +33,7 @@ func TestAIChatCompletionsProxyStreamsAndRewritesAlias(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		upstreamRequests <- capturedAIRequest{
 			path:          r.URL.Path,
+			rawQuery:      r.URL.RawQuery,
 			authorization: r.Header.Get("Authorization"),
 			body:          body,
 		}
@@ -147,5 +149,82 @@ func TestAIChatCompletionsProxyStreamsAndRewritesAlias(t *testing.T) {
 	}
 	if !upstreamPayload.Stream {
 		t.Fatal("upstream stream = false, want true")
+	}
+}
+
+func TestAIVideoByVideoIDProxyUsesAgnesAPIWithoutV1Suffix(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+
+	upstreamRequests := make(chan capturedAIRequest, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamRequests <- capturedAIRequest{
+			path:          r.URL.Path,
+			rawQuery:      r.URL.RawQuery,
+			authorization: r.Header.Get("Authorization"),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"succeeded","video_url":"https://example.com/video.mp4"}`))
+	}))
+	defer upstream.Close()
+
+	config.Cfg = config.Config{
+		StorageDriver:  "sqlite",
+		DatabaseDSN:    "file:ai-video-id-proxy-test?mode=memory&cache=shared",
+		JWTSecret:      "test-secret",
+		JWTExpireHours: 1,
+	}
+	_, err := repository.SaveSettings(model.Settings{
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{{
+				Name:    "agnes-upstream",
+				BaseURL: upstream.URL + "/v1",
+				APIKey:  "upstream-key",
+				Models:  []string{"agnes-video-v2.0"},
+				Weight:  1,
+				Enabled: true,
+			}},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	session, err := service.Register("agnes-user", "secret")
+	if err != nil {
+		t.Fatalf("register user: %v", err)
+	}
+
+	server := httptest.NewServer(router.New())
+	defer server.Close()
+
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/api/v1/agnesapi?model=agnes-video-v2.0&video_id=video-123", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+session.Token)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("video id proxy request: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(response.Body)
+		t.Fatalf("status = %d body = %s", response.StatusCode, responseBody)
+	}
+
+	var captured capturedAIRequest
+	select {
+	case captured = <-upstreamRequests:
+	case <-time.After(time.Second):
+		t.Fatal("upstream did not receive request")
+	}
+	if captured.path != "/agnesapi" {
+		t.Fatalf("upstream path = %q, want /agnesapi", captured.path)
+	}
+	if captured.rawQuery != "video_id=video-123" {
+		t.Fatalf("upstream query = %q, want video_id=video-123", captured.rawQuery)
+	}
+	if captured.authorization != "Bearer upstream-key" {
+		t.Fatalf("upstream authorization = %q", captured.authorization)
 	}
 }

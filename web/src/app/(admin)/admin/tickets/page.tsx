@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { Button, Flex, Input, Select, Space, Tag, Typography } from "antd";
@@ -154,7 +154,7 @@ export default function AdminTicketsPage() {
             key: "actions",
             width: 80,
             render: (_, item) => (
-                <Button type="link" size="small" onClick={() => router.push(/admin/tickets/)}>查看</Button>
+                <Button type="link" size="small" onClick={() => router.push(`/admin/tickets/${item.id}`)}>查看</Button>
             ),
         },
     ];

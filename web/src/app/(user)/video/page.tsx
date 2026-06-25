@@ -282,9 +282,9 @@ export default function VideoPage() {
     };
 
     const resumePendingLogs = (items: GenerationLog[]) => {
-        for (const log of items) {
-            if (log.status === "生成中" && log.task) void pollGenerationLog(log);
-        }
+        const pending = items.filter((log) => log.status === "生成中" && log.task);
+        const latest = pending.length ? pending[0] : undefined;
+        if (latest) void pollGenerationLog(latest);
     };
 
     const pollGenerationLog = async (log: GenerationLog, configOverride?: AiConfig) => {

@@ -7,21 +7,44 @@ import (
 	"gorm.io/gorm"
 )
 
-// PromptCategories 返回内置提示词分类的副本。
+// PromptCategories 返回全部提示词分类（从远程源表读取）。
 func PromptCategories() []model.PromptCategory {
-	result := make([]model.PromptCategory, len(promptCategories))
-	copy(result, promptCategories)
+	sources, err := ListPromptSources()
+	if err != nil {
+		return nil
+	}
+	result := make([]model.PromptCategory, 0, len(sources)+1)
+	result = append(result, model.PromptCategory{Category: "system", Name: "系统", Description: "系统提示词分类"})
+	for _, s := range sources {
+		result = append(result, model.PromptCategory{
+			Category:    s.Category,
+			Name:        s.Name,
+			Description: s.Description,
+			GithubURL:   s.GithubURL,
+			Remote:      true,
+			UpdatedAt:   s.SyncedAt,
+		})
+	}
 	return result
 }
 
-// PromptCategoryByCode 根据分类编码查找内置提示词分类。
+// PromptCategoryByCode 根据分类编码查找提示词分类。
 func PromptCategoryByCode(category string) (model.PromptCategory, bool) {
-	for _, item := range promptCategories {
-		if item.Category == category {
-			return item, true
-		}
+	if category == "system" {
+		return model.PromptCategory{Category: "system", Name: "系统", Description: "系统提示词分类"}, true
 	}
-	return model.PromptCategory{}, false
+	source, ok, err := GetPromptSource(category)
+	if err != nil || !ok {
+		return model.PromptCategory{}, false
+	}
+	return model.PromptCategory{
+		Category:    source.Category,
+		Name:        source.Name,
+		Description: source.Description,
+		GithubURL:   source.GithubURL,
+		Remote:      true,
+		UpdatedAt:   source.SyncedAt,
+	}, true
 }
 
 // ListPromptCategories 返回内置提示词分类。

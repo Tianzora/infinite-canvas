@@ -100,6 +100,34 @@ export type AdminPromptQuery = {
     pageSize?: number;
 };
 
+export type PromptSource = {
+    category: string;
+    name: string;
+    description: string;
+    githubUrl: string;
+    sourceUrl: string;
+    templateType: string;
+    parseConfig: Record<string, unknown>;
+    imageBaseUrl: string;
+    enabled: boolean;
+    syncedAt: string;
+    promptCount: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export async function fetchAdminPromptSources(token: string) {
+    return apiGet<PromptSource[]>("/api/admin/prompt-sources", undefined, token);
+}
+
+export async function saveAdminPromptSource(token: string, source: Partial<PromptSource>) {
+    return apiPost<boolean>("/api/admin/prompt-sources", source, token);
+}
+
+export async function deleteAdminPromptSource(token: string, category: string) {
+    return apiDelete<boolean>(`/api/admin/prompt-sources/${encodeURIComponent(category)}`, token);
+}
+
 export type AdminAsset = {
     id: string;
     title: string;

@@ -28,6 +28,9 @@ func New() *gin.Engine {
 	api.HEAD("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
 	})
+	api.GET("/media/prompts/images/:category/:filename", func(c *gin.Context) {
+		handler.PromptImage(c.Writer, c.Request, c.Param("category"), c.Param("filename"))
+	})
 	v1 := api.Group("/v1", middleware.UserAuth)
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
@@ -73,6 +76,11 @@ func New() *gin.Engine {
 	admin.POST("/prompts/batch-delete", gin.WrapF(handler.AdminDeletePrompts))
 	admin.DELETE("/prompts/:id", func(c *gin.Context) {
 		handler.AdminDeletePrompt(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/prompt-sources", gin.WrapF(handler.AdminPromptSources))
+	admin.POST("/prompt-sources", gin.WrapF(handler.AdminSavePromptSource))
+	admin.DELETE("/prompt-sources/:category", func(c *gin.Context) {
+		handler.AdminDeletePromptSource(c.Writer, c.Request, c.Param("category"))
 	})
 	admin.GET("/assets", gin.WrapF(handler.AdminAssets))
 	admin.POST("/assets", gin.WrapF(handler.AdminSaveAsset))

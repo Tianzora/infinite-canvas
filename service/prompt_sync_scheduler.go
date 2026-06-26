@@ -48,17 +48,20 @@ func RefreshPromptSyncScheduler() {
 	}
 }
 
+// SyncRemotePromptCategories 同步全部已启用的远程提示词源。
 func SyncRemotePromptCategories() {
-	for _, category := range repository.PromptCategories() {
-		if !category.Remote {
+	sources, err := repository.ListEnabledPromptSources()
+	if err != nil {
+		log.Printf("load prompt sources failed err=%v", err)
+		return
+	}
+	for _, source := range sources {
+		log.Printf("scheduled prompt sync start category=%s", source.Category)
+		if _, err := SyncPromptCategory(source.Category); err != nil {
+			log.Printf("scheduled prompt sync failed category=%s err=%v", source.Category, err)
 			continue
 		}
-		log.Printf("scheduled prompt sync start category=%s", category.Category)
-		if _, err := SyncPromptCategory(category.Category); err != nil {
-			log.Printf("scheduled prompt sync failed category=%s err=%v", category.Category, err)
-			continue
-		}
-		log.Printf("scheduled prompt sync done category=%s", category.Category)
+		log.Printf("scheduled prompt sync done category=%s", source.Category)
 	}
 }
 

@@ -72,3 +72,35 @@ func AdminSyncPromptCategories(w http.ResponseWriter, r *http.Request) {
 	log.Printf("sync prompt category done category=%s", request.Category)
 	OK(w, categories)
 }
+
+// ── 远程源管理 ──
+
+func AdminPromptSources(w http.ResponseWriter, r *http.Request) {
+	sources, err := service.ListPromptSources()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, sources)
+}
+
+func AdminSavePromptSource(w http.ResponseWriter, r *http.Request) {
+	var source model.PromptSource
+	if err := json.NewDecoder(r.Body).Decode(&source); err != nil {
+		Fail(w, "请求格式不正确")
+		return
+	}
+	if err := service.SavePromptSource(source); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
+func AdminDeletePromptSource(w http.ResponseWriter, r *http.Request, category string) {
+	if err := service.DeletePromptSource(category); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}

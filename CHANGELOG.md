@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.0.7 - 2026-06-26
+
++ [修复] 修复 modelCosts 中旧 rawModel 条目优先于新 displayName 被匹配的问题，normalizeSettings 时自动 reconcile。
++ [优化] 管理后台默认图片/视频/文本模型下拉按类型筛选，不再显示全部模型。
++ [调整] 头像菜单"我的工单"按钮文字改为"提交工单"。
+
 ## v1.0.6 - 2026-06-25
 
 + [修复] 修复模型别名改名后算力点定价匹配失败的问题，`modelCostMatches` 统一 resolve 到 rawModel 再比较。

@@ -463,17 +463,17 @@ export default function AdminSettingsPage() {
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultImageModel"]} label="默认图片模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch allowClear options={publicModels.filter(isImageModel).map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultVideoModel"]} label="默认视频模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch allowClear options={publicModels.filter(isVideoModel).map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} md={6}>
                                         <Form.Item name={["public", "modelChannel", "defaultTextModel"]} label="默认文本模型">
-                                            <Select showSearch allowClear options={publicModels.map((item) => ({ label: item, value: item }))} />
+                                            <Select showSearch allowClear options={publicModels.filter(isTextModel).map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -1082,4 +1082,20 @@ function getJsonError(value: string) {
     } catch (error) {
         return error instanceof Error ? error.message : "JSON 格式不正确";
     }
+}
+
+function isImageModel(name: string): boolean {
+    const n = name.toLowerCase().trim();
+    return n.includes("agnes-image") || n.includes("seedream") ||
+        n.includes("gpt-image") || n.includes("image") || n.includes("图片");
+}
+
+function isVideoModel(name: string): boolean {
+    const n = name.toLowerCase().trim();
+    return n.includes("agnes-video") || n.includes("seedance") ||
+        n.includes("video") || n.includes("视频");
+}
+
+function isTextModel(name: string): boolean {
+    return !isImageModel(name) && !isVideoModel(name);
 }

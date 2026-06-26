@@ -124,6 +124,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		setting.ModelChannel.AvailableModels = uniqueModelNames(setting.ModelChannel.AvailableModels)
 		setting.ModelChannel.ModelProtocols = nil
 	}
+	setting.ModelChannel.ModelCosts = reconcileModelCosts(setting.ModelChannel.ModelCosts, setting.ModelChannel.ModelAliases)
 	setting.ModelChannel.DefaultTextModel = repairDefaultModel(setting.ModelChannel.DefaultTextModel, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAliases, isTextModelName)
 	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAliases, isImageModelName)
 	setting.ModelChannel.DefaultVideoModel = repairDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels, setting.ModelChannel.ModelAliases, isVideoModelName)
@@ -156,6 +157,51 @@ func modelCostMatches(costModel string, requestModel string, aliases []model.Mod
 	rawCost := resolveRawPublicModelName(costModel, aliases)
 	rawRequest := resolveRawPublicModelName(requestModel, aliases)
 	return rawCost == rawRequest || rawCost == requestModel || rawRequest == costModel
+}
+
+// reconcileModelCosts 把 modelCosts 中的旧 rawModel key 迁移为当前 displayName，
+// 避免旧条目先于新条目被匹配。
+func reconcileModelCosts(costs []model.ModelCost, aliases []model.ModelAlias) []model.ModelCost {
+	existing := map[string]int{}
+	for _, c := range costs {
+		existing[c.Model] = c.Credits
+	}
+
+	displayNameSet := map[string]bool{}
+	for _, a := range aliases {
+		dm := strings.TrimSpace(a.DisplayName)
+		raw := strings.TrimSpace(a.Model)
+		if dm == "" || raw == "" {
+			continue
+		}
+		displayNameSet[dm] = true
+		if _, hasCurrent := existing[dm]; !hasCurrent {
+			if credits, hasOld := existing[raw]; hasOld {
+				existing[dm] = credits
+				delete(existing, raw)
+			}
+		} else {
+			delete(existing, raw)
+		}
+	}
+
+	// ponytail: 丢弃 key 是 rawModel 但不在当前 aliases 里的旧条目
+	allRaw := map[string]bool{}
+	for _, a := range aliases {
+		allRaw[strings.TrimSpace(a.Model)] = true
+	}
+	for k := range existing {
+		if displayNameSet[k] || !allRaw[k] {
+			continue
+		}
+		delete(existing, k)
+	}
+
+	result := make([]model.ModelCost, 0, len(existing))
+	for k, credits := range existing {
+		result = append(result, model.ModelCost{Model: k, Credits: credits})
+	}
+	return result
 }
 
 func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting {

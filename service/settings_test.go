@@ -451,3 +451,92 @@ func TestResolveCreditLogModelsWithHistory(t *testing.T) {
 		t.Fatalf("extra model = %q, want 新名称", extra["model"])
 	}
 }
+
+func TestReconcileModelCosts(t *testing.T) {
+	// 旧 rawModel 条目迁移为 displayName，credits 保留
+	costs := []model.ModelCost{
+		{Model: "agnes-image-2.1-flash", Credits: 5},
+		{Model: "gpt-5.5", Credits: 10},
+	}
+	aliases := []model.ModelAlias{
+		{Model: "agnes-image-2.1-flash", DisplayName: "我的图像模型"},
+	}
+	result := reconcileModelCosts(costs, aliases)
+	resultMap := map[string]int{}
+	for _, c := range result {
+		resultMap[c.Model] = c.Credits
+	}
+	if v, ok := resultMap["我的图像模型"]; !ok || v != 5 {
+		t.Fatalf("expected 我的图像模型=5, got %d (ok=%v)", v, ok)
+	}
+	if _, ok := resultMap["agnes-image-2.1-flash"]; ok {
+		t.Fatal("rawModel key should be removed after migration")
+	}
+	if v, ok := resultMap["gpt-5.5"]; !ok || v != 10 {
+		t.Fatalf("expected gpt-5.5=10, got %d (ok=%v)", v, ok)
+	}
+}
+
+func TestReconcileModelCostsKeepsDisplayNameWhenBothExist(t *testing.T) {
+	// rawModel 和 displayName 同时存在，保留 displayName 的 credits
+	costs := []model.ModelCost{
+		{Model: "agnes-image-2.1-flash", Credits: 5},
+		{Model: "我的图像模型", Credits: 8},
+	}
+	aliases := []model.ModelAlias{
+		{Model: "agnes-image-2.1-flash", DisplayName: "我的图像模型"},
+	}
+	result := reconcileModelCosts(costs, aliases)
+	resultMap := map[string]int{}
+	for _, c := range result {
+		resultMap[c.Model] = c.Credits
+	}
+	if v := resultMap["我的图像模型"]; v != 8 {
+		t.Fatalf("expected 我的图像模型=8 (keep existing), got %d", v)
+	}
+	if _, ok := resultMap["agnes-image-2.1-flash"]; ok {
+		t.Fatal("rawModel key should be removed")
+	}
+}
+
+func TestReconcileModelCostsDropsOrphanRawModel(t *testing.T) {
+	// rawModel 条目不在当前 aliases 里，丢弃
+	costs := []model.ModelCost{
+		{Model: "old-deleted-model", Credits: 3},
+		{Model: "gpt-5.5", Credits: 10},
+	}
+	aliases := []model.ModelAlias{
+		{Model: "gpt-5.5", DisplayName: "GPT-5"},
+	}
+	result := reconcileModelCosts(costs, aliases)
+	resultMap := map[string]int{}
+	for _, c := range result {
+		resultMap[c.Model] = c.Credits
+	}
+	if _, ok := resultMap["old-deleted-model"]; !ok {
+		t.Fatal("non-rawModel key should be kept")
+	}
+	if v := resultMap["GPT-5"]; v != 10 {
+		t.Fatalf("expected GPT-5=10, got %d", v)
+	}
+}
+
+func TestModelCostMatchesAfterReconciliation(t *testing.T) {
+	// reconciliation 后 displayName 直接精确匹配
+	costs := []model.ModelCost{
+		{Model: "agnes-image-2.1-flash", Credits: 5},
+	}
+	aliases := []model.ModelAlias{
+		{Model: "agnes-image-2.1-flash", DisplayName: "我的图像模型"},
+	}
+	reconciled := reconcileModelCosts(costs, aliases)
+	if len(reconciled) != 1 || reconciled[0].Model != "我的图像模型" || reconciled[0].Credits != 5 {
+		t.Fatalf("reconciled = %v", reconciled)
+	}
+	if !modelCostMatches(reconciled[0].Model, "我的图像模型", aliases) {
+		t.Fatal("expected displayName exact match after reconciliation")
+	}
+	if !modelCostMatches(reconciled[0].Model, "agnes-image-2.1-flash", aliases) {
+		t.Fatal("expected rawModel match through alias after reconciliation")
+	}
+}

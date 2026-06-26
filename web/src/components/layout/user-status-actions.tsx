@@ -71,7 +71,7 @@ export function UserStatusActions({ showConfig = true, showVersion = false, vers
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),
         { key: "redeem", icon: <Gift className="size-4" />, label: "兑换码", onClick: () => setRedeemOpen(true) },
-        { key: "tickets", icon: <MessageSquare className="size-4" />, label: <Link href="/tickets">我的工单</Link> },
+        { key: "tickets", icon: <MessageSquare className="size-4" />, label: <Link href="/tickets">提交工单</Link> },
         { type: "divider" },
         { key: "logout", icon: <LogOut className="size-4" />, label: "退出登录", onClick: logout },
     ];

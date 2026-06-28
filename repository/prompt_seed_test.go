@@ -5,6 +5,25 @@ import (
 	"testing"
 )
 
+func TestDefaultPromptSourcesUseRealMarkdownBackticks(t *testing.T) {
+	sources := defaultPromptSources("now")
+	for _, source := range sources {
+		if source.TemplateType != "readme" {
+			continue
+		}
+		parseConfig := string(source.ParseConfig)
+		if strings.Contains(parseConfig, "` + bt + `") {
+			t.Fatalf("%s parse config contains literal bt placeholder: %s", source.Category, parseConfig)
+		}
+		if strings.Contains(parseConfig, "` + bt + `{3}") {
+			t.Fatalf("%s parse config contains literal bt placeholder: %s", source.Category, parseConfig)
+		}
+		if !strings.Contains(parseConfig, "```") && !strings.Contains(parseConfig, "`") {
+			t.Fatalf("%s parse config missing markdown backticks: %s", source.Category, parseConfig)
+		}
+	}
+}
+
 func TestDefaultPromptSourcesIncludesCurrentYouMindGPTImage2Config(t *testing.T) {
 	sources := defaultPromptSources("now")
 	var found bool

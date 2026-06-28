@@ -21,7 +21,7 @@ func seedPromptSources(db *gorm.DB) error {
 }
 
 func defaultPromptSources(now string) []model.PromptSource {
-	bt := "` + bt + `"
+	bt := "`"
 	return []model.PromptSource{
 		{
 			Category: "gpt-image-2-prompts", Name: "GPT Image 2 Prompts",

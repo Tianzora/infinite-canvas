@@ -140,6 +140,11 @@ func ModelCost(modelName string) (int, error) {
 	modelName = strings.TrimSpace(modelName)
 	channel := normalizeSettings(settings).Public.ModelChannel
 	for _, item := range channel.ModelCosts {
+		if strings.TrimSpace(item.Model) == modelName {
+			return item.Credits, nil
+		}
+	}
+	for _, item := range channel.ModelCosts {
 		if modelCostMatches(item.Model, modelName, channel.ModelAliases) {
 			return item.Credits, nil
 		}
@@ -153,9 +158,12 @@ func modelCostMatches(costModel string, requestModel string, aliases []model.Mod
 	if costModel == "" {
 		return false
 	}
-	// ponytail: 统一 resolve 到 rawModel 再比较，避免 alias 改名后匹配失败
-	rawCost := resolveRawPublicModelName(costModel, aliases)
-	rawRequest := resolveRawPublicModelName(requestModel, aliases)
+	if costModel == requestModel {
+		return true
+	}
+	rawCounts := aliasRawCounts(aliases)
+	rawCost := resolveRawPublicModelNameIfUnique(costModel, aliases, rawCounts)
+	rawRequest := resolveRawPublicModelNameIfUnique(requestModel, aliases, rawCounts)
 	return rawCost == rawRequest || rawCost == requestModel || rawRequest == costModel
 }
 
@@ -396,6 +404,36 @@ func resolveRawPublicModelName(name string, aliases []model.ModelAlias) string {
 	for _, item := range aliases {
 		if strings.TrimSpace(item.DisplayName) == name {
 			return strings.TrimSpace(item.Model)
+		}
+	}
+	return name
+}
+
+func aliasRawCounts(aliases []model.ModelAlias) map[string]int {
+	counts := map[string]int{}
+	seen := map[string]bool{}
+	for _, item := range aliases {
+		rawModel := strings.TrimSpace(item.Model)
+		displayName := strings.TrimSpace(item.DisplayName)
+		if rawModel == "" || displayName == "" {
+			continue
+		}
+		key := rawModel + "|" + displayName
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		counts[rawModel]++
+	}
+	return counts
+}
+
+func resolveRawPublicModelNameIfUnique(name string, aliases []model.ModelAlias, rawCounts map[string]int) string {
+	name = strings.TrimSpace(name)
+	for _, item := range aliases {
+		rawModel := strings.TrimSpace(item.Model)
+		if strings.TrimSpace(item.DisplayName) == name && rawCounts[rawModel] == 1 {
+			return rawModel
 		}
 	}
 	return name

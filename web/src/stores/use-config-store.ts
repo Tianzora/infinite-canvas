@@ -353,10 +353,11 @@ export function resolveModelChannel(config: AiConfig, value: string) {
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
     const channel = resolveModelChannel(config, value);
     const modelChannel = config.channelMode === "remote" ? useConfigStore.getState().publicSettings?.modelChannel : undefined;
+    const selectedModel = value || config.model;
     return {
         ...config,
-        model: resolveRawModelName(value || config.model, modelChannel?.modelAliases),
-        modelProtocol: resolveModelProtocol(value || config.model, modelChannel),
+        model: config.channelMode === "remote" ? modelOptionName(selectedModel).trim() : resolveRawModelName(selectedModel, modelChannel?.modelAliases),
+        modelProtocol: resolveModelProtocol(selectedModel, modelChannel),
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
     };

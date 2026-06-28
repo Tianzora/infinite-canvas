@@ -408,10 +408,20 @@ func resolveCreditLogModels(logs []model.CreditLog) {
 	normalized := normalizeSettings(func() model.Settings { s, _ := repository.GetSettings(); return s }())
 	aliases := normalized.Public.ModelChannel.ModelAliases
 	aliasHistory := normalized.Public.ModelChannel.ModelAliasHistory
+	rawCounts := aliasRawCounts(aliases)
+	displayNameSet := map[string]bool{}
+	for _, a := range aliases {
+		if displayName := strings.TrimSpace(a.DisplayName); displayName != "" {
+			displayNameSet[displayName] = true
+		}
+	}
 	// rawModel → 最新 displayName
 	rawToDisplay := map[string]string{}
 	for _, a := range aliases {
-		rawToDisplay[strings.TrimSpace(a.Model)] = strings.TrimSpace(a.DisplayName)
+		rawModel := strings.TrimSpace(a.Model)
+		if rawCounts[rawModel] == 1 {
+			rawToDisplay[rawModel] = strings.TrimSpace(a.DisplayName)
+		}
 	}
 	// history: 旧 displayName → rawModel（只补充当前 alias 里查不到的）
 	historyLookup := map[string]string{}
@@ -432,8 +442,11 @@ func resolveCreditLogModels(logs []model.CreditLog) {
 		}
 		rawModel := strings.TrimSpace(extra["rawModel"])
 		oldModel := strings.TrimSpace(extra["model"])
+		if displayNameSet[oldModel] {
+			continue
+		}
 		if rawModel == "" {
-			rawModel = resolveRawPublicModelName(oldModel, aliases)
+			rawModel = resolveRawPublicModelNameIfUnique(oldModel, aliases, rawCounts)
 			// 当前 alias 查不到 → fallback history
 			if rawModel == oldModel {
 				if r, ok := historyLookup[oldModel]; ok {

@@ -240,6 +240,97 @@ func TestModelCostMatchesRawModelThroughPublicAlias(t *testing.T) {
 	}
 }
 
+func TestModelCostKeepsDistinctDisplayNamesForSameRawModel(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+	config.Cfg = config.Config{StorageDriver: "sqlite", DatabaseDSN: "file:model-cost-distinct-alias-test?mode=memory&cache=shared"}
+	_, err := repository.SaveSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{
+				ModelCosts: []model.ModelCost{
+					{Model: "gpt-image-2-1k", Credits: 10},
+					{Model: "gpt-image-2-2k", Credits: 20},
+				},
+			},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{
+					Enabled: true,
+					Models:  []string{"gpt-image-2"},
+					ModelAliases: []model.ModelAlias{
+						{Model: "gpt-image-2", DisplayName: "gpt-image-2-1k"},
+					},
+				},
+				{
+					Enabled: true,
+					Models:  []string{"gpt-image-2"},
+					ModelAliases: []model.ModelAlias{
+						{Model: "gpt-image-2", DisplayName: "gpt-image-2-2k"},
+					},
+				},
+			},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	credits, err := ModelCost("gpt-image-2-2k")
+	if err != nil {
+		t.Fatalf("ModelCost returned error: %v", err)
+	}
+	if credits != 20 {
+		t.Fatalf("credits = %d, want exact displayName cost 20", credits)
+	}
+}
+
+func TestSelectModelChannelKeepsDistinctDisplayNamesForSameRawModel(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+	config.Cfg = config.Config{StorageDriver: "sqlite", DatabaseDSN: "file:select-channel-distinct-alias-test?mode=memory&cache=shared"}
+	_, err := repository.SaveSettings(model.Settings{
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{
+					Name:    "image-1k",
+					BaseURL: "https://example-1k.test",
+					APIKey:  "key-1k",
+					Enabled: true,
+					Models:  []string{"gpt-image-2"},
+					ModelAliases: []model.ModelAlias{
+						{Model: "gpt-image-2", DisplayName: "gpt-image-2-1k"},
+					},
+				},
+				{
+					Name:    "image-2k",
+					BaseURL: "https://example-2k.test",
+					APIKey:  "key-2k",
+					Enabled: true,
+					Models:  []string{"gpt-image-2"},
+					ModelAliases: []model.ModelAlias{
+						{Model: "gpt-image-2", DisplayName: "gpt-image-2-2k"},
+					},
+				},
+			},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	channel, rawModel, err := SelectModelChannel("gpt-image-2-2k")
+	if err != nil {
+		t.Fatalf("SelectModelChannel returned error: %v", err)
+	}
+	if channel.Name != "image-2k" {
+		t.Fatalf("channel = %q, want image-2k", channel.Name)
+	}
+	if rawModel != "gpt-image-2" {
+		t.Fatalf("rawModel = %q, want gpt-image-2", rawModel)
+	}
+}
+
 func TestMatchChannelModelMatchesDisplayNameBeforeRawModel(t *testing.T) {
 	channel := model.ModelChannel{
 		Models: []string{"doubao-seedance-2.0-pro", "即梦视频 2.0 Pro"},
@@ -255,6 +346,54 @@ func TestMatchChannelModelMatchesDisplayNameBeforeRawModel(t *testing.T) {
 	raw, ok = MatchChannelModel(channel, "doubao-seedance-2.0-pro")
 	if !ok || raw != "doubao-seedance-2.0-pro" {
 		t.Fatalf("MatchChannelModel raw = %q %v, want raw model", raw, ok)
+	}
+}
+
+func TestResolveCreditLogModelsKeepsExactDisplayNameWhenRawModelAmbiguous(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+	config.Cfg = config.Config{StorageDriver: "sqlite", DatabaseDSN: "file:resolve-credit-log-ambiguous-raw-test?mode=memory&cache=shared"}
+	_, err := repository.SaveSettings(model.Settings{
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{
+					Enabled: true,
+					Models:  []string{"gpt-image-2"},
+					ModelAliases: []model.ModelAlias{
+						{Model: "gpt-image-2", DisplayName: "gpt-image-2-1k"},
+					},
+				},
+				{
+					Enabled: true,
+					Models:  []string{"gpt-image-2"},
+					ModelAliases: []model.ModelAlias{
+						{Model: "gpt-image-2", DisplayName: "gpt-image-2-2k"},
+					},
+				},
+			},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	logs := []model.CreditLog{
+		{
+			Type:   model.CreditLogTypeAIConsume,
+			Remark: "调用模型 gpt-image-2-1k",
+			Extra:  `{"model":"gpt-image-2-1k","rawModel":"gpt-image-2","path":"/v1/images/generations"}`,
+		},
+	}
+
+	resolveCreditLogModels(logs)
+
+	if logs[0].Remark != "调用模型 gpt-image-2-1k" {
+		t.Fatalf("remark = %q, want original displayName", logs[0].Remark)
+	}
+	var extra map[string]string
+	_ = json.Unmarshal([]byte(logs[0].Extra), &extra)
+	if extra["model"] != "gpt-image-2-1k" {
+		t.Fatalf("extra model = %q, want original displayName", extra["model"])
 	}
 }
 
@@ -294,15 +433,15 @@ func TestModelCostMatchesAfterAliasRename(t *testing.T) {
 	}
 }
 
-func TestModelCostMatchesBothResolveToSameRaw(t *testing.T) {
-	// 两个不同 displayName 都 resolve 到同一 rawModel → 应匹配
-	// 这是 fix 的核心场景：costModel 和 requestModel 都是 alias，resolve 后相等
+func TestModelCostDoesNotMatchAmbiguousAliasesWithSameRaw(t *testing.T) {
+	// 同一个 rawModel 对应多个 displayName 时，这些 displayName 代表不同渠道配置。
+	// 不能只按 rawModel 合并，否则 gpt-image-2-2k 会命中 gpt-image-2-1k。
 	aliases := []model.ModelAlias{
 		{Model: "gpt-5.5", DisplayName: "GPT-5"},
 		{Model: "gpt-5.5", DisplayName: "GPT-5 Turbo"},
 	}
-	if !modelCostMatches("GPT-5", "GPT-5 Turbo", aliases) {
-		t.Fatal("expected match: both resolve to same rawModel gpt-5.5")
+	if modelCostMatches("GPT-5", "GPT-5 Turbo", aliases) {
+		t.Fatal("expected no match: same rawModel has multiple displayNames")
 	}
 }
 

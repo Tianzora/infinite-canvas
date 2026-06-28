@@ -28,6 +28,7 @@ const emptySettings: AdminSettings = {
     public: {
         modelChannel: {
             availableModels: [],
+            modelAliases: [],
             modelProtocols: [],
             modelCosts: [],
             defaultModel: "",

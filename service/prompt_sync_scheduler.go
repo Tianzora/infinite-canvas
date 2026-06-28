@@ -9,7 +9,10 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-const defaultPromptSyncCron = "*/5 * * * *"
+const (
+	legacyPromptSyncCron  = "*/5 * * * *"
+	defaultPromptSyncCron = "*/30 * * * *"
+)
 
 var (
 	promptSyncCron *cron.Cron
@@ -73,7 +76,7 @@ func SyncRemotePromptCategories() {
 }
 
 func normalizePromptSyncSetting(setting model.PromptSyncSetting) model.PromptSyncSetting {
-	if setting.Cron == "" {
+	if setting.Cron == "" || setting.Cron == legacyPromptSyncCron {
 		setting.Cron = defaultPromptSyncCron
 	}
 	if setting.Enabled == nil {

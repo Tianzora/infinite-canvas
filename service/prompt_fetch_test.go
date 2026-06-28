@@ -157,3 +157,10 @@ func TestPromptSyncTryLockReleases(t *testing.T) {
 	}
 	secondUnlock()
 }
+
+func TestNormalizePromptSyncSettingUpgradesLegacyDefaultCron(t *testing.T) {
+	setting := normalizePromptSyncSetting(model.PromptSyncSetting{Cron: "*/5 * * * *"})
+	if setting.Cron != "*/30 * * * *" {
+		t.Fatalf("cron = %q, want 30 minute default", setting.Cron)
+	}
+}

@@ -1,4 +1,4 @@
-﻿package service
+package service
 
 import (
 	"bytes"
@@ -21,6 +21,8 @@ type SystemUpdateResult struct {
 }
 
 var secretLikePattern = regexp.MustCompile(`(?i)(token|secret|password|api[_-]?key)=\S+`)
+
+var runSystemUpdateCommand = runUpdateCommand
 
 func AdminTriggerSystemUpdate() (SystemUpdateResult, error) {
 	if !config.Cfg.SystemUpdateEnabled {
@@ -50,18 +52,11 @@ func AdminTriggerSystemUpdate() (SystemUpdateResult, error) {
 	if err != nil {
 		return SystemUpdateResult{Stage: "precheck", Status: "unsupported", Log: "未找到 docker compose 命令"}, safeMessageError{message: "当前环境未安装 docker compose 或 docker-compose"}
 	}
-	// 用配置的镜像地址覆盖 compose 文件中的 image，确保走镜像拉取。
-	updateImage := strings.TrimSpace(config.Cfg.SystemUpdateImage)
-	if updateImage == "" {
-		updateImage = "ghcr.nju.edu.cn/fairchildovo/infinite-canvas:latest"
-	}
-	if err := os.WriteFile(composeFile, []byte(replaceImageInCompose(string(composeContent), updateImage)), 0644); err != nil {
-		return SystemUpdateResult{Stage: "precheck", Status: "failed", Log: err.Error()}, safeMessageError{message: "无法写入 compose 文件"}
-	}
-	if output, err := runUpdateCommand(ctx, workDir, composeCommand, append(composeArgs, "-f", composeFile, "pull")...); err != nil {
+	updateEnv := systemUpdateEnv()
+	if output, err := runSystemUpdateCommand(ctx, workDir, updateEnv, composeCommand, append(composeArgs, "-f", composeFile, "pull")...); err != nil {
 		return SystemUpdateResult{Stage: "pull", Status: "failed", Log: output}, safeMessageError{message: "拉取 Docker 镜像失败：" + shortLog(output, err)}
 	}
-	output, err := runUpdateCommand(ctx, workDir, composeCommand, append(composeArgs, "-f", composeFile, "up", "-d", "--force-recreate")...)
+	output, err := runSystemUpdateCommand(ctx, workDir, updateEnv, composeCommand, append(composeArgs, "-f", composeFile, "up", "-d")...)
 	if err != nil {
 		return SystemUpdateResult{Stage: "restart", Status: "failed", Log: output}, safeMessageError{message: "重启 Docker 服务失败：" + shortLog(output, err)}
 	}
@@ -69,23 +64,34 @@ func AdminTriggerSystemUpdate() (SystemUpdateResult, error) {
 }
 
 func resolveComposeCommand(ctx context.Context, workDir string) (string, []string, error) {
-	if _, err := runUpdateCommand(ctx, workDir, "docker", "compose", "version"); err == nil {
+	if _, err := runSystemUpdateCommand(ctx, workDir, nil, "docker", "compose", "version"); err == nil {
 		return "docker", []string{"compose"}, nil
 	}
-	if _, err := runUpdateCommand(ctx, workDir, "docker-compose", "version"); err == nil {
+	if _, err := runSystemUpdateCommand(ctx, workDir, nil, "docker-compose", "version"); err == nil {
 		return "docker-compose", nil, nil
 	}
 	return "", nil, exec.ErrNotFound
 }
 
-func runUpdateCommand(ctx context.Context, workDir string, name string, args ...string) (string, error) {
+func runUpdateCommand(ctx context.Context, workDir string, env []string, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = workDir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	err := cmd.Run()
 	return sanitizeUpdateLog(output.String()), err
+}
+
+func systemUpdateEnv() []string {
+	updateImage := strings.TrimSpace(config.Cfg.SystemUpdateImage)
+	if updateImage == "" {
+		updateImage = "ghcr.nju.edu.cn/fairchildovo/infinite-canvas:latest"
+	}
+	return []string{"SYSTEM_UPDATE_IMAGE=" + updateImage}
 }
 
 func sanitizeUpdateLog(log string) string {
@@ -95,12 +101,6 @@ func sanitizeUpdateLog(log string) string {
 		lines = lines[len(lines)-24:]
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
-var imageLinePattern = regexp.MustCompile(`(?m)^(\s*image:\s*).*$`)
-
-func replaceImageInCompose(content string, image string) string {
-	return imageLinePattern.ReplaceAllString(content, "${1}"+image)
 }
 
 func shortLog(output string, err error) string {

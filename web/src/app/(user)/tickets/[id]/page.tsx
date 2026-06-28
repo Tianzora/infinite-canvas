@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { BugOutlined, FeatureOutlined, QuestionCircleOutlined, ReloadOutlined, SendOutlined } from "@ant-design/icons";
+import { SendOutlined } from "@ant-design/icons";
 import { Avatar, Button, Card, Flex, Input, Spin, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import { useParams } from "next/navigation";

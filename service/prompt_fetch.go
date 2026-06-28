@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,6 +13,11 @@ import (
 
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/repository"
+)
+
+var (
+	githubRawBase       = "https://raw.githubusercontent.com"
+	githubRawMirrorBase = "https://gh-proxy.com/https://raw.githubusercontent.com"
 )
 
 // SyncPromptCategory 同步指定分类的远程提示词。
@@ -280,23 +286,64 @@ func cachePromptImages(category string, items []model.Prompt) []model.Prompt {
 
 func fetchText(rawURL string) (string, error) {
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		request, _ := http.NewRequest(http.MethodGet, rawURL, nil)
-		client := http.Client{Timeout: 60 * time.Second}
-		response, err := client.Do(request)
-		if err != nil {
-			lastErr = err
-			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+	for _, targetURL := range promptFetchURLs(rawURL) {
+		for attempt := 0; attempt < 3; attempt++ {
+			request, _ := http.NewRequest(http.MethodGet, targetURL, nil)
+			client := http.Client{Timeout: 60 * time.Second}
+			response, err := client.Do(request)
+			if err != nil {
+				lastErr = err
+				time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+				continue
+			}
+			data, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if response.StatusCode < 200 || response.StatusCode >= 300 {
+				lastErr = errors.New("HTTP " + response.Status + " " + targetURL + " " + strings.TrimSpace(string(data[:min(len(data), 200)])))
+				break
+			}
+			return string(data), readErr
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("unknown error")
+	}
+	return "", errors.New("拉取失败: " + rawURL + " (" + lastErr.Error() + ")")
+}
+
+func promptFetchURLs(rawURL string) []string {
+	result := []string{rawURL}
+	for _, mirror := range []string{os.Getenv("GITHUB_RAW_MIRROR_BASE"), githubRawMirrorBase} {
+		if mirrorURL := githubRawMirrorURL(rawURL, mirror); mirrorURL != "" {
+			result = append(result, mirrorURL)
+		}
+	}
+	return uniqueStrings(result)
+}
+
+func githubRawMirrorURL(rawURL string, mirrorBase string) string {
+	mirrorBase = strings.TrimRight(strings.TrimSpace(mirrorBase), "/")
+	if mirrorBase == "" {
+		return ""
+	}
+	rawPrefix := strings.TrimRight(githubRawBase, "/") + "/"
+	if strings.HasPrefix(rawURL, rawPrefix) {
+		return mirrorBase + "/" + strings.TrimPrefix(rawURL, rawPrefix)
+	}
+	return ""
+}
+
+func uniqueStrings(items []string) []string {
+	result := []string{}
+	seen := map[string]bool{}
+	for _, item := range items {
+		if item == "" || seen[item] {
 			continue
 		}
-		defer response.Body.Close()
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			return "", errors.New("拉取失败: " + rawURL)
-		}
-		data, err := io.ReadAll(response.Body)
-		return string(data), err
+		seen[item] = true
+		result = append(result, item)
 	}
-	return "", lastErr
+	return result
 }
 
 func splitByPrefix(text, prefix string) []string {

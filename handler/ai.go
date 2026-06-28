@@ -51,29 +51,40 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "grok-imagine-video"
 	}
-	channel, rawModel, err := service.SelectModelChannel(modelName)
+	candidates, err := service.SelectModelChannelCandidates(modelName)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, rawModel, path)
-	targetURL := service.BuildModelChannelURL(channel, path)
-	if query := upstreamAIQuery(r); query != "" {
-		if strings.Contains(targetURL, "?") {
-			targetURL += "&" + query
-		} else {
-			targetURL += "?" + query
+	query := upstreamAIQuery(r)
+	lastMessage := "AI 接口请求失败"
+	for len(candidates) > 0 {
+		selected, remaining := takeWeightedCandidate(candidates)
+		candidates = remaining
+		upstreamPath := resolveAIProxyPath(selected.Channel.BaseURL, selected.RawModel, path)
+		targetURL := service.BuildModelChannelURL(selected.Channel, upstreamPath)
+		if query != "" {
+			if strings.Contains(targetURL, "?") {
+				targetURL += "&" + query
+			} else {
+				targetURL += "?" + query
+			}
+		}
+		logVideoQueryMode(r, upstreamPath, modelName)
+		request, err := http.NewRequest(http.MethodGet, targetURL, nil)
+		if err != nil {
+			lastMessage = "AI 接口请求失败"
+			continue
+		}
+		request.Header.Set("Authorization", "Bearer "+selected.Channel.APIKey)
+		if ok, message := copyAIResponseAttempt(w, request); ok {
+			return
+		} else if message != "" {
+			lastMessage = message
 		}
 	}
-	logVideoQueryMode(r, path, modelName)
-	request, err := http.NewRequest(http.MethodGet, targetURL, nil)
-	if err != nil {
-		Fail(w, "AI 接口请求失败")
-		return
-	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	copyAIResponse(w, request, nil)
+	Fail(w, lastMessage)
 }
 
 func upstreamAIQuery(r *http.Request) string {
@@ -111,55 +122,70 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	credits *= readAIRequestCount(body, contentType)
-	channel, rawModel, err := service.SelectModelChannel(modelName)
+	candidates, err := service.SelectModelChannelCandidates(modelName)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	body = service.ReplaceModelInBody(body, contentType, modelName, rawModel)
-	path = resolveAIProxyPath(channel.BaseURL, rawModel, path)
-	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
-	if err != nil {
-		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
-		Fail(w, "AI 接口请求失败")
-		return
-	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	if contentType != "" {
-		request.Header.Set("Content-Type", contentType)
-	}
-	if err := service.ConsumeUserCredits(user.ID, modelName, rawModel, credits, path); err != nil {
+	chargeRawModel := candidates[0].RawModel
+	chargePath := resolveAIProxyPath(candidates[0].Channel.BaseURL, chargeRawModel, path)
+	if err := service.ConsumeUserCredits(user.ID, modelName, chargeRawModel, credits, chargePath); err != nil {
 		FailError(w, err)
 		return
 	}
-	copyAIResponse(w, request, func() {
-		if err := service.RefundUserCredits(user.ID, modelName, rawModel, credits, path); err != nil {
-			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+	lastMessage := "AI 接口请求失败"
+	for len(candidates) > 0 {
+		selected, remaining := takeWeightedCandidate(candidates)
+		candidates = remaining
+		requestBody := service.ReplaceModelInBody(body, contentType, modelName, selected.RawModel)
+		upstreamPath := resolveAIProxyPath(selected.Channel.BaseURL, selected.RawModel, path)
+		targetURL := service.BuildModelChannelURL(selected.Channel, upstreamPath)
+		request, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(requestBody))
+		if err != nil {
+			log.Printf("AI proxy build request failed: url=%s err=%v", targetURL, err)
+			lastMessage = "AI 接口请求失败"
+			continue
 		}
-	})
+		request.Header.Set("Authorization", "Bearer "+selected.Channel.APIKey)
+		if contentType != "" {
+			request.Header.Set("Content-Type", contentType)
+		}
+		if ok, message := copyAIResponseAttempt(w, request); ok {
+			return
+		} else if message != "" {
+			lastMessage = message
+		}
+	}
+	if err := service.RefundUserCredits(user.ID, modelName, chargeRawModel, credits, chargePath); err != nil {
+		log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+	}
+	Fail(w, lastMessage)
 }
 
 func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func()) {
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
+	if ok, message := copyAIResponseAttempt(w, request); ok {
+		return
+	} else {
 		if onFailure != nil {
 			onFailure()
 		}
-		Fail(w, "AI 接口请求失败")
-		return
+		Fail(w, message)
+	}
+}
+
+func copyAIResponseAttempt(w http.ResponseWriter, request *http.Request) (bool, string) {
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
+		return false, "AI 接口请求失败"
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 		log.Printf("AI upstream error: url=%s status=%d", request.URL.String(), response.StatusCode)
-		if onFailure != nil {
-			onFailure()
-		}
-		Fail(w, aiUpstreamStatusMessage(response.StatusCode, body))
-		return
+		return false, aiUpstreamStatusMessage(response.StatusCode, body)
 	}
 
 	for key, values := range response.Header {
@@ -172,6 +198,21 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 	}
 	w.WriteHeader(response.StatusCode)
 	copyAIResponseBody(w, response.Body)
+	return true, ""
+}
+
+func takeWeightedCandidate(candidates []service.ModelChannelCandidate) (service.ModelChannelCandidate, []service.ModelChannelCandidate) {
+	selected := service.SelectWeightedModelChannel(candidates)
+	remaining := make([]service.ModelChannelCandidate, 0, len(candidates)-1)
+	removed := false
+	for _, item := range candidates {
+		if !removed && item.Channel.Name == selected.Channel.Name && item.Channel.BaseURL == selected.Channel.BaseURL && item.RawModel == selected.RawModel {
+			removed = true
+			continue
+		}
+		remaining = append(remaining, item)
+	}
+	return selected, remaining
 }
 
 func copyAIResponseBody(w http.ResponseWriter, body io.Reader) {

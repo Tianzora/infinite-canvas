@@ -13,11 +13,15 @@ description: 当前版本已实现但仍需人工验证的变更项
 - 版本提醒：前台本地版本记录有新启用版本时自动弹出一次版本更新详情；用户关闭后同一账号同一版本不再自动弹出，手动点击版本号仍可查看完整记录。
 - 算力点购买入口：后台系统设置可配置“充值链接”；前台兑换码弹窗和算力点记录弹窗在链接非空时显示购买按钮并新窗口打开。
 - 管理员一键更新：系统设置页维护区域可触发 `POST /api/admin/system/update`；已配置 Docker compose 更新环境时拉取 `ghcr.nju.edu.cn/fairchildovo/infinite-canvas` 镜像（可通过 `SYSTEM_UPDATE_IMAGE` 自定义）并重建容器，未配置时返回明确错误。
+- 管理员一键更新快速路径：触发后不应改写 compose 文件；应执行 `docker compose pull` 和 `docker compose up -d`，并通过 `SYSTEM_UPDATE_IMAGE` 环境变量覆盖镜像地址。
 - 算力点空投备注：管理员手动调增用户算力点产生的 `admin_adjust` 记录备注应为“空投”；扣减不应写成“空投”。
 - Agnes 模型接入：`agnes-image-*` 应支持文生图和图生图，图生图走 `/images/generations` 而不是 `/images/edits`；`agnes-video-*` 应支持文生视频和图生视频，并优先使用 `/agnesapi?video_id=...` 轮询。
 - Agnes 协议渠道：后台添加渠道时可选择 `Agnes` 协议；选择后即使模型使用自定义真实名称，只要真实名称包含图片/视频语义，也应进入对应分类，并按 Agnes 图片/视频请求逻辑处理。
 - 同真实模型多渠道自定义名称：两个渠道都使用同一个真实模型（例如 `gpt-image-2`）但配置不同显示名（例如 `gpt-image-2-1k`、`gpt-image-2-2k`）时，前台选择哪个显示名就应路由到对应渠道；算力点费用和历史记录展示也不应被同 raw model 的另一个显示名覆盖。
+- 同真实模型多渠道无自定义名称：两个渠道商都提供同一个真实模型且未填写显示名称时，公开模型应保持同一个模型名并按渠道权重调度；某个渠道不可用时应自动尝试其他同模型渠道。
 - Agnes 图片尺寸：选择 Agnes 图片模型或 Agnes 协议图片模型后，生图工作台和画布图片生成参数面板应继续使用原尺寸界面，并自动开启已有“16倍数对齐”；自定义显示名也应按 Agnes raw model 或渠道协议识别尺寸限制，并允许 `4096x4096`。
 - Agnes 图生视频公网参考图：本地参考图只复用现有 `PUBLIC_BASE_URL + /api/media/references/*` 生成公网 URL，不新增对象存储或额外公网服务；生产部署需确认运行容器内存在 `PUBLIC_BASE_URL=https://canvas.tianzora.uno`。
 - 工单系统：用户可通过右上角菜单"我的工单"入口创建工单、查看列表和详情、追加回复；管理员后台"工单管理"可查看全部工单、筛选、回复、变更状态和指派。
 - 远程提示词源管理：管理后台"远程源管理"页面可新增、编辑、启用/禁用、同步、删除远程提示词源；内置 6 个源已自动迁移到数据库（EvoLinkAI 已禁用，其余启用）；同步时自动下载提示词封面图到服务器本地缓存，前端通过 `/api/media/prompts/images/` 访问。
+- 远程提示词源 raw 镜像：GitHub raw 直连失败时，应自动尝试 `GITHUB_RAW_MIRROR_BASE` 或默认 raw 镜像；同步失败时错误信息应包含具体 HTTP 状态或网络错误。
+- YouMind GPT Image 2 远程源：默认源应包含 `YouMind-OpenLab/awesome-gpt-image-2`，同步时按 `### No.` 分段，封面应取"生成图片"里的真实作品图，不应取 README 顶部徽章图。

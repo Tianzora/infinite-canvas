@@ -186,7 +186,6 @@ func reconcileModelCosts(costs []model.ModelCost, aliases []model.ModelAlias) []
 		if _, hasCurrent := existing[dm]; !hasCurrent {
 			if credits, hasOld := existing[raw]; hasOld {
 				existing[dm] = credits
-				delete(existing, raw)
 			}
 		} else {
 			delete(existing, raw)
@@ -269,32 +268,54 @@ func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, in
 }
 
 func SelectModelChannel(modelName string) (model.ModelChannel, string, error) {
-	settings, err := repository.GetSettings()
+	candidates, err := SelectModelChannelCandidates(modelName)
 	if err != nil {
 		return model.ModelChannel{}, "", err
 	}
+	selected := SelectWeightedModelChannel(candidates)
+	return selected.Channel, selected.RawModel, nil
+}
+
+type ModelChannelCandidate struct {
+	Channel  model.ModelChannel
+	RawModel string
+}
+
+func SelectModelChannelCandidates(modelName string) ([]ModelChannelCandidate, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return nil, err
+	}
 	channels := modelChannelsForModel(normalizePrivateSetting(settings.Private).Channels, modelName)
 	if len(channels) == 0 {
-		return model.ModelChannel{}, "", errors.New("没有可用模型渠道")
+		return nil, errors.New("没有可用模型渠道")
 	}
-	total := 0
+	candidates := make([]ModelChannelCandidate, 0, len(channels))
 	for _, channel := range channels {
-		total += channel.Weight
+		rawModel, ok := MatchChannelModel(channel, modelName)
+		if !ok {
+			rawModel = modelName
+		}
+		candidates = append(candidates, ModelChannelCandidate{Channel: channel, RawModel: rawModel})
+	}
+	return candidates, nil
+}
+
+func SelectWeightedModelChannel(candidates []ModelChannelCandidate) ModelChannelCandidate {
+	total := 0
+	for _, item := range candidates {
+		total += item.Channel.Weight
 	}
 	hit := rand.Intn(total)
-	selected := channels[0]
-	for _, channel := range channels {
-		hit -= channel.Weight
+	selected := candidates[0]
+	for _, item := range candidates {
+		hit -= item.Channel.Weight
 		if hit < 0 {
-			selected = channel
+			selected = item
 			break
 		}
 	}
-	rawModel, ok := MatchChannelModel(selected, modelName)
-	if !ok {
-		rawModel = modelName
-	}
-	return selected, rawModel, nil
+	return selected
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {

@@ -152,6 +152,100 @@ func TestAIChatCompletionsProxyStreamsAndRewritesAlias(t *testing.T) {
 	}
 }
 
+func TestAIChatCompletionsProxyFailsOverToNextChannelForSameModel(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+
+	failedRequests := make(chan capturedAIRequest, 1)
+	failingUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		failedRequests <- capturedAIRequest{path: r.URL.Path, authorization: r.Header.Get("Authorization"), body: body}
+		http.Error(w, `{"error":{"message":"provider down"}}`, http.StatusBadGateway)
+	}))
+	defer failingUpstream.Close()
+
+	okRequests := make(chan capturedAIRequest, 1)
+	okUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		okRequests <- capturedAIRequest{path: r.URL.Path, authorization: r.Header.Get("Authorization"), body: body}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer okUpstream.Close()
+
+	config.Cfg = config.Config{
+		StorageDriver:  "sqlite",
+		DatabaseDSN:    "file:ai-proxy-failover-test?mode=memory&cache=shared",
+		JWTSecret:      "test-secret",
+		JWTExpireHours: 1,
+	}
+	_, err := repository.SaveSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{ModelCosts: []model.ModelCost{{Model: "gpt-image-2", Credits: 3}}},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{Name: "failing", BaseURL: failingUpstream.URL, APIKey: "fail-key", Models: []string{"gpt-image-2"}, Weight: 1000, Enabled: true},
+				{Name: "ok", BaseURL: okUpstream.URL, APIKey: "ok-key", Models: []string{"gpt-image-2"}, Weight: 1, Enabled: true},
+			},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	session, err := service.Register("failover-user", "secret")
+	if err != nil {
+		t.Fatalf("register user: %v", err)
+	}
+	if _, err := service.AdjustUserCredits(session.User.ID, 100); err != nil {
+		t.Fatalf("adjust credits: %v", err)
+	}
+
+	server := httptest.NewServer(router.New())
+	defer server.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"model":    "gpt-image-2",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	})
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+session.Token)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("chat proxy request: %v", err)
+	}
+	defer response.Body.Close()
+	responseBody, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.StatusCode, responseBody)
+	}
+	if !strings.Contains(string(responseBody), `"ok"`) {
+		t.Fatalf("body = %s, want ok upstream response", responseBody)
+	}
+
+	select {
+	case captured := <-failedRequests:
+		if captured.authorization != "Bearer fail-key" {
+			t.Fatalf("failing authorization = %q", captured.authorization)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("failing upstream did not receive request")
+	}
+	select {
+	case captured := <-okRequests:
+		if captured.authorization != "Bearer ok-key" {
+			t.Fatalf("ok authorization = %q", captured.authorization)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ok upstream did not receive request")
+	}
+}
+
 func TestAIVideoByVideoIDProxyUsesAgnesAPIWithoutV1Suffix(t *testing.T) {
 	previousConfig := config.Cfg
 	t.Cleanup(func() { config.Cfg = previousConfig })

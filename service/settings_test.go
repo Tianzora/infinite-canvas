@@ -331,6 +331,54 @@ func TestSelectModelChannelKeepsDistinctDisplayNamesForSameRawModel(t *testing.T
 	}
 }
 
+func TestDuplicateRawModelsWithoutDisplayNameSharePublicNameAndWeightedCandidates(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+	config.Cfg = config.Config{StorageDriver: "sqlite", DatabaseDSN: "file:duplicate-raw-channel-name-test?mode=memory&cache=shared"}
+	_, err := repository.SaveSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{
+				ModelCosts: []model.ModelCost{{Model: "gpt-image-2", Credits: 9}},
+			},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{Name: "provider-a", BaseURL: "https://a.example.test", APIKey: "key-a", Enabled: true, Models: []string{"gpt-image-2"}},
+				{Name: "provider-b", BaseURL: "https://b.example.test", APIKey: "key-b", Enabled: true, Models: []string{"gpt-image-2"}},
+			},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+
+	settings, err := PublicSettings()
+	if err != nil {
+		t.Fatalf("PublicSettings returned error: %v", err)
+	}
+	wantModels := []string{"gpt-image-2"}
+	if !reflect.DeepEqual(settings.ModelChannel.AvailableModels, wantModels) {
+		t.Fatalf("available models = %#v, want %#v", settings.ModelChannel.AvailableModels, wantModels)
+	}
+	if len(settings.ModelChannel.ModelCosts) != 1 || settings.ModelChannel.ModelCosts[0].Model != "gpt-image-2" || settings.ModelChannel.ModelCosts[0].Credits != 9 {
+		t.Fatalf("model costs = %#v, want gpt-image-2=9", settings.ModelChannel.ModelCosts)
+	}
+	candidates, err := SelectModelChannelCandidates("gpt-image-2")
+	if err != nil {
+		t.Fatalf("SelectModelChannelCandidates returned error: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("candidate len = %d, want 2", len(candidates))
+	}
+	credits, err := ModelCost("gpt-image-2")
+	if err != nil {
+		t.Fatalf("ModelCost returned error: %v", err)
+	}
+	if credits != 9 {
+		t.Fatalf("credits = %d, want 9", credits)
+	}
+}
+
 func TestMatchChannelModelMatchesDisplayNameBeforeRawModel(t *testing.T) {
 	channel := model.ModelChannel{
 		Models: []string{"doubao-seedance-2.0-pro", "即梦视频 2.0 Pro"},

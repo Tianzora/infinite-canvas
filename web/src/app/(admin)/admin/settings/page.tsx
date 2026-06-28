@@ -368,7 +368,7 @@ export default function AdminSettingsPage() {
         if (!token) return;
         Modal.confirm({
             title: "确认触发一键更新？",
-            content: "该操作会执行 docker compose pull 和重建容器。请求可能因容器重启中断，请稍后刷新页面确认状态。",
+            content: "该操作会执行 docker compose pull 和 up -d。请求可能因容器更新中断，请稍后刷新页面确认状态。",
             okText: "触发更新",
             cancelText: "取消",
             okButtonProps: { danger: true },
@@ -413,7 +413,7 @@ export default function AdminSettingsPage() {
                 </Card>
                 <Card variant="borderless" title="维护 / 部署">
                     <Flex justify="space-between" align="center" gap={16} wrap>
-                        <Typography.Text type="secondary">一键更新会拉取 `fairchildovo/infinite-canvas` 镜像并重建 Docker Compose 服务。</Typography.Text>
+                        <Typography.Text type="secondary">一键更新会拉取 `fairchildovo/infinite-canvas` 镜像并执行 Docker Compose 更新。</Typography.Text>
                         <Button danger icon={<SyncOutlined />} loading={isUpdatingSystem} onClick={triggerSystemUpdate}>
                             一键更新
                         </Button>

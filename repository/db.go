@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-
 	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
 	"github.com/glebarez/sqlite"
@@ -20,7 +19,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
-
 
 var (
 	db     *gorm.DB
@@ -62,10 +60,13 @@ func DB() (*gorm.DB, error) {
 			&model.Asset{},
 			&model.Setting{},
 			&model.Coupon{},
+			&model.SubscriptionPlan{},
+			&model.UserSubscription{},
+			&model.SubscriptionUsage{},
 			&model.Announcement{},
-		&model.Release{},
-		&model.Ticket{},
-		&model.TicketReply{},
+			&model.Release{},
+			&model.Ticket{},
+			&model.TicketReply{},
 			&model.PromptSource{},
 		)
 		if dbErr == nil {
@@ -181,5 +182,3 @@ func isPostgresError(err error, code string) bool {
 func quoteMySQLIdentifier(name string) string {
 	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
-
-

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextOutlined, GiftOutlined, HomeOutlined, LogoutOutlined, MessageOutlined, NotificationOutlined, PictureOutlined, TagOutlined, CloudSyncOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
+import { FileTextOutlined, GiftOutlined, HomeOutlined, LogoutOutlined, MessageOutlined, NotificationOutlined, PictureOutlined, TagOutlined, CloudSyncOutlined, SettingOutlined, TransactionOutlined, UserOutlined, CrownOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Typography, theme } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -18,6 +18,7 @@ const adminMenus = [
     { key: "/admin/prompt-sources", icon: <CloudSyncOutlined />, label: "远程源管理" },
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
     { key: "/admin/coupons", icon: <GiftOutlined />, label: "兑换码" },
+    { key: "/admin/subscriptions", icon: <CrownOutlined />, label: "订阅套餐" },
     { key: "/admin/announcements", icon: <NotificationOutlined />, label: "公告管理" },
     { key: "/admin/releases", icon: <TagOutlined />, label: "版本记录" },
     { key: "/admin/tickets", icon: <MessageOutlined />, label: "工单管理" },
@@ -34,6 +35,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const logout = useUserStore((state) => state.clearSession);
     const activeKey = pathname.startsWith("/admin/settings")
         ? "/admin/settings"
+        : pathname.startsWith("/admin/subscriptions")
+          ? "/admin/subscriptions"
         : pathname.startsWith("/admin/coupons")
           ? "/admin/coupons"
           : (pathname.startsWith("/admin/tickets")) ? "/admin/tickets" : pathname.startsWith("/admin/releases")
@@ -51,7 +54,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     : pathname.startsWith("/admin/users")
                       ? "/admin/users"
                       : "";
-    const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/coupons") ? "兑换码管理" : (pathname.startsWith("/admin/tickets")) ? "工单管理" : pathname.startsWith("/admin/releases") ? "版本记录" : pathname.startsWith("/admin/announcements") ? "公告管理" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/prompt-sources") ? "远程源管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
+    const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/subscriptions") ? "订阅套餐" : pathname.startsWith("/admin/coupons") ? "兑换码管理" : (pathname.startsWith("/admin/tickets")) ? "工单管理" : pathname.startsWith("/admin/releases") ? "版本记录" : pathname.startsWith("/admin/announcements") ? "公告管理" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/prompt-sources") ? "远程源管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
 
     useEffect(() => {
         if (!isReady) return;

@@ -57,13 +57,13 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	query := upstreamAIQuery(r)
 	lastMessage := "AI 接口请求失败"
 	for len(candidates) > 0 {
 		selected, remaining := takeWeightedCandidate(candidates)
 		candidates = remaining
 		upstreamPath := resolveAIProxyPath(selected.Channel.BaseURL, selected.RawModel, path)
 		targetURL := service.BuildModelChannelURL(selected.Channel, upstreamPath)
+		query := upstreamAIQuery(r, selected.RawModel)
 		if query != "" {
 			if strings.Contains(targetURL, "?") {
 				targetURL += "&" + query
@@ -87,9 +87,12 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	Fail(w, lastMessage)
 }
 
-func upstreamAIQuery(r *http.Request) string {
+func upstreamAIQuery(r *http.Request, rawModel string) string {
 	query := r.URL.Query()
 	query.Del("model")
+	if query.Get("video_id") != "" && query.Get("model_name") == "" && strings.TrimSpace(rawModel) != "" {
+		query.Set("model_name", rawModel)
+	}
 	return query.Encode()
 }
 
@@ -128,18 +131,23 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	chargeRawModel := candidates[0].RawModel
-	chargePath := resolveAIProxyPath(candidates[0].Channel.BaseURL, chargeRawModel, path)
-	if err := service.ConsumeUserCredits(user.ID, modelName, chargeRawModel, credits, chargePath); err != nil {
+	reservation, err := service.ReserveUserCredits(user.ID, credits)
+	if err != nil {
 		FailError(w, err)
 		return
 	}
 	lastMessage := "AI 接口请求失败"
+	chargeRawModel := ""
+	chargeChannel := ""
+	chargePath := ""
 	for len(candidates) > 0 {
 		selected, remaining := takeWeightedCandidate(candidates)
 		candidates = remaining
 		requestBody := service.ReplaceModelInBody(body, contentType, modelName, selected.RawModel)
 		upstreamPath := resolveAIProxyPath(selected.Channel.BaseURL, selected.RawModel, path)
+		chargeRawModel = selected.RawModel
+		chargeChannel = selected.Channel.Name
+		chargePath = upstreamPath
 		targetURL := service.BuildModelChannelURL(selected.Channel, upstreamPath)
 		request, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(requestBody))
 		if err != nil {
@@ -152,12 +160,30 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			request.Header.Set("Content-Type", contentType)
 		}
 		if ok, message := copyAIResponseAttempt(w, request); ok {
+			if reservation.SubscriptionCredits > 0 {
+				err = service.SaveSubscriptionConsumeLog(user.ID, modelName, selected.RawModel, selected.Channel.Name, credits, upstreamPath, reservation)
+			}
+			if err == nil && (reservation.BalanceCredits > 0 || reservation.Source == service.CreditReservationSourceCredits) {
+				balanceCredits := reservation.BalanceCredits
+				if balanceCredits == 0 {
+					balanceCredits = credits
+				}
+				err = service.SaveCreditConsumeLog(user.ID, modelName, selected.RawModel, selected.Channel.Name, balanceCredits, upstreamPath)
+			}
+			if err != nil {
+				log.Printf("AI proxy save credit log failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
+			}
 			return
 		} else if message != "" {
 			lastMessage = message
 		}
 	}
-	if err := service.RefundUserCredits(user.ID, modelName, chargeRawModel, credits, chargePath); err != nil {
+	if reservation.Source == service.CreditReservationSourceSubscription {
+		err = service.RefundCreditReservation(reservation)
+	} else {
+		err = service.RefundUserCredits(user.ID, modelName, chargeRawModel, chargeChannel, credits, chargePath)
+	}
+	if err != nil {
 		log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 	}
 	Fail(w, lastMessage)

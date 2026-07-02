@@ -114,6 +114,25 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     throw new Error("视频接口没有返回可播放的视频");
 }
 
+export function buildAgnesVideoPayload(config: AiConfig, model: string, prompt: string, referenceUrls: string[]) {
+    const size = normalizeAgnesVideoSize(config.size);
+    const payload: Record<string, unknown> = {
+        model,
+        prompt,
+        width: size.width,
+        height: size.height,
+        frame_rate: AGNES_VIDEO_FRAME_RATE,
+        num_frames: agnesNumFrames(config.videoSeconds),
+    };
+    if (config.videoMode === "keyframes") payload.extra_body = { mode: "keyframes" };
+    if (referenceUrls.length === 1) {
+        payload.image = referenceUrls[0];
+        payload.mode = "ti2vid";
+    }
+    if (referenceUrls.length > 1) payload.extra_body = { ...(payload.extra_body as Record<string, unknown> | undefined), image: referenceUrls };
+    return payload;
+}
+
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[]): Promise<VideoGenerationTask> {
     const body = new FormData();
     body.append("model", model);
@@ -136,19 +155,8 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
 
 async function createAgnesVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]): Promise<VideoGenerationTask> {
     if (videoReferences.length || audioReferences.length) throw new Error("Agnes 视频模型暂不支持参考视频或参考音频，请仅使用文本或参考图");
-    const size = normalizeAgnesVideoSize(config.size);
-    const payload: Record<string, unknown> = {
-        model,
-        prompt,
-        width: size.width,
-        height: size.height,
-        frame_rate: AGNES_VIDEO_FRAME_RATE,
-        num_frames: agnesNumFrames(config.videoSeconds),
-    };
-    if (references.length) {
-        payload.image = await resolveAgnesReferenceImageUrl(config, references[0]);
-        payload.mode = "ti2vid";
-    }
+    const referenceUrls = await Promise.all(references.map((image) => resolveAgnesReferenceImageUrl(config, image)));
+    const payload = buildAgnesVideoPayload(config, model, prompt, referenceUrls);
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json") })).data);
         const taskId = taskIdFromResponse(created);

@@ -12,13 +12,49 @@ import (
 const couponCodeChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 const couponCodeLength = 8
 
+type GenerateCouponsRequest struct {
+	Type      model.CouponType `json:"type"`
+	Credits   int              `json:"credits"`
+	PlanID    string           `json:"planId"`
+	ExpiresAt string           `json:"expiresAt"`
+}
+
+type RedeemCouponResult struct {
+	Balance      int                        `json:"balance"`
+	Subscription *model.SubscriptionSummary `json:"subscription,omitempty"`
+}
+
+type CouponRedeemPreview struct {
+	Type                    model.CouponType `json:"type"`
+	PlanName                string           `json:"planName,omitempty"`
+	WillReplaceSubscription bool             `json:"willReplaceSubscription"`
+}
+
 // GenerateCoupons 批量生成兑换码。
-func GenerateCoupons(count int, credits int, expiresAt string) ([]model.Coupon, error) {
+func GenerateCoupons(count int, req GenerateCouponsRequest) ([]model.Coupon, error) {
 	if count <= 0 || count > 100 {
 		return nil, safeMessageError{message: "数量需在 1-100 之间"}
 	}
-	if credits <= 0 {
+	couponType := req.Type
+	if couponType == "" {
+		couponType = model.CouponTypeCredits
+	}
+	if couponType == model.CouponTypeCredits && req.Credits <= 0 {
 		return nil, safeMessageError{message: "额度需大于 0"}
+	}
+	if couponType == model.CouponTypeSubscription {
+		plan, ok, err := repository.GetSubscriptionPlanByID(strings.TrimSpace(req.PlanID))
+		if err != nil {
+			return nil, err
+		}
+		if !ok || !plan.IsActive {
+			return nil, safeMessageError{message: "请选择启用的订阅套餐"}
+		}
+		req.Credits = 0
+		req.PlanID = plan.ID
+	}
+	if couponType != model.CouponTypeCredits && couponType != model.CouponTypeSubscription {
+		return nil, safeMessageError{message: "兑换码类型无效"}
 	}
 	coupons := make([]model.Coupon, 0, count)
 	for i := 0; i < count; i++ {
@@ -29,9 +65,11 @@ func GenerateCoupons(count int, credits int, expiresAt string) ([]model.Coupon, 
 		coupons = append(coupons, model.Coupon{
 			ID:        newID("coupon"),
 			Code:      code,
-			Credits:   credits,
+			Type:      couponType,
+			PlanID:    strings.TrimSpace(req.PlanID),
+			Credits:   req.Credits,
 			IsActive:  true,
-			ExpiresAt: strings.TrimSpace(expiresAt),
+			ExpiresAt: strings.TrimSpace(req.ExpiresAt),
 			CreatedAt: now(),
 		})
 	}
@@ -51,43 +89,105 @@ func ListCoupons(q model.Query, status string) (model.CouponList, error) {
 }
 
 // RedeemCoupon 用户兑换码。
-func RedeemCoupon(userID string, code string) (int, error) {
+func RedeemCoupon(userID string, code string) (RedeemCouponResult, error) {
 	code = strings.TrimSpace(strings.ToUpper(code))
 	if code == "" {
-		return 0, safeMessageError{message: "请输入兑换码"}
+		return RedeemCouponResult{}, safeMessageError{message: "请输入兑换码"}
 	}
 	coupon, ok, err := repository.GetCouponByCode(code)
 	if err != nil {
-		return 0, err
+		return RedeemCouponResult{}, err
 	}
 	if !ok {
-		return 0, safeMessageError{message: "兑换码不存在"}
+		return RedeemCouponResult{}, safeMessageError{message: "兑换码不存在"}
 	}
-	coupon, ok, err = repository.RedeemCoupon(code, userID, now())
+	if coupon.Type == "" || coupon.Type == model.CouponTypeCredits {
+		return redeemCreditsCoupon(userID, code, coupon)
+	}
+	if coupon.Type == model.CouponTypeSubscription {
+		return redeemSubscriptionCoupon(userID, code, coupon)
+	}
+	return RedeemCouponResult{}, safeMessageError{message: "兑换码类型无效"}
+}
+
+func PreviewCouponRedeem(userID string, code string) (CouponRedeemPreview, error) {
+	code = strings.TrimSpace(strings.ToUpper(code))
+	if code == "" {
+		return CouponRedeemPreview{}, safeMessageError{message: "请输入兑换码"}
+	}
+	coupon, ok, err := repository.GetCouponByCode(code)
 	if err != nil {
-		return 0, err
+		return CouponRedeemPreview{}, err
 	}
 	if !ok {
-		return 0, safeMessageError{message: "兑换失败"}
+		return CouponRedeemPreview{}, safeMessageError{message: "兑换码不存在"}
 	}
-	user, _, err := repository.RefundUserCredits(userID, coupon.Credits, now())
+	if coupon.Type == "" {
+		coupon.Type = model.CouponTypeCredits
+	}
+	preview := CouponRedeemPreview{Type: coupon.Type}
+	if coupon.Type != model.CouponTypeSubscription {
+		return preview, nil
+	}
+	plan, ok, err := repository.GetSubscriptionPlanByID(coupon.PlanID)
 	if err != nil {
-		return 0, err
+		return CouponRedeemPreview{}, err
 	}
-	extra, _ := json.Marshal(map[string]string{"coupon": coupon.Code})
-	_, _ = repository.SaveCreditLog(model.CreditLog{
+	if ok {
+		preview.PlanName = plan.Name
+	}
+	_, hasCurrent, err := repository.GetCurrentSubscription(userID, now())
+	if err != nil {
+		return CouponRedeemPreview{}, err
+	}
+	preview.WillReplaceSubscription = hasCurrent
+	return preview, nil
+}
+
+func redeemCreditsCoupon(userID string, code string, coupon model.Coupon) (RedeemCouponResult, error) {
+	ts := now()
+	extra, _ := json.Marshal(map[string]string{"coupon": coupon.Code, "couponType": string(model.CouponTypeCredits)})
+	_, user, err := repository.RedeemCreditsCoupon(code, userID, ts, model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
 		Type:      model.CreditLogTypeRedeem,
 		Amount:    coupon.Credits,
-		Balance:   user.Credits,
 		Remark:    "兑换码兑换",
 		Extra:     string(extra),
-		CreatedAt: now(),
+		CreatedAt: ts,
 	})
-	return user.Credits, nil
+	if err != nil {
+		return RedeemCouponResult{}, err
+	}
+	return RedeemCouponResult{Balance: user.Credits}, nil
 }
 
+func redeemSubscriptionCoupon(userID string, code string, coupon model.Coupon) (RedeemCouponResult, error) {
+	sub, err := RedeemSubscriptionCoupon(userID, coupon)
+	if err != nil {
+		return RedeemCouponResult{}, err
+	}
+	ts := now()
+	extra, _ := json.Marshal(map[string]string{"coupon": coupon.Code, "couponType": string(model.CouponTypeSubscription), "subscriptionId": sub.ID, "planId": sub.PlanID})
+	_, _, err = repository.RedeemSubscriptionCoupon(code, userID, ts, sub, true, model.CreditLog{
+		ID:        newID("credit"),
+		UserID:    userID,
+		Type:      model.CreditLogTypeRedeem,
+		Amount:    0,
+		Balance:   currentBalance(userID),
+		Remark:    "兑换订阅",
+		Extra:     string(extra),
+		CreatedAt: ts,
+	})
+	if err != nil {
+		return RedeemCouponResult{}, err
+	}
+	summary, _, err := GetCurrentSubscriptionSummary(userID)
+	if err != nil {
+		return RedeemCouponResult{}, err
+	}
+	return RedeemCouponResult{Balance: currentBalance(userID), Subscription: &summary}, nil
+}
 
 // DeleteCoupons 批量删除兑换码。
 func DeleteCoupons(ids []string) error {

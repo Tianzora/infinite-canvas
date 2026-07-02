@@ -239,6 +239,11 @@ func ListUsers(q model.Query) (model.UserList, error) {
 	for i := range users {
 		users[i].Password = ""
 		normalizeUserDefaults(&users[i])
+		if summary, ok, err := GetCurrentSubscriptionSummary(users[i].ID); err != nil {
+			return model.UserList{}, err
+		} else if ok {
+			users[i].Subscription = &summary
+		}
 	}
 	return model.UserList{Items: users, Total: int(total)}, nil
 }
@@ -334,18 +339,57 @@ func AdjustUserCredits(id string, credits int) (model.User, error) {
 	return user, err
 }
 
-func ConsumeUserCredits(userID string, modelName string, rawModel string, credits int, path string) error {
+func ConsumeUserCredits(userID string, modelName string, rawModel string, channel string, credits int, path string) error {
+	reservation, err := ReserveUserCredits(userID, credits)
+	if err != nil {
+		return err
+	}
+	if reservation.SubscriptionCredits > 0 {
+		if err := SaveSubscriptionConsumeLog(userID, modelName, rawModel, channel, credits, path, reservation); err != nil {
+			return err
+		}
+	}
+	if reservation.BalanceCredits > 0 || reservation.Source == CreditReservationSourceCredits {
+		balanceCredits := reservation.BalanceCredits
+		if balanceCredits == 0 {
+			balanceCredits = credits
+		}
+		return SaveCreditConsumeLog(userID, modelName, rawModel, channel, balanceCredits, path)
+	}
+	return nil
+}
+
+func ReserveUserCredits(userID string, credits int) (CreditReservation, error) {
+	if credits <= 0 {
+		return CreditReservation{UserID: userID, Source: CreditReservationSourceNone}, nil
+	}
+	if reservation, ok, err := TryConsumeSubscriptionQuota(userID, credits); err != nil {
+		return CreditReservation{}, err
+	} else if ok {
+		return reservation, nil
+	}
+	_, ok, err := repository.ConsumeUserCredits(userID, credits, now())
+	if err != nil {
+		return CreditReservation{}, err
+	}
+	if !ok {
+		return CreditReservation{}, safeMessageError{message: "算力点不足"}
+	}
+	return CreditReservation{UserID: userID, Source: CreditReservationSourceCredits, Credits: credits}, nil
+}
+
+func SaveCreditConsumeLog(userID string, modelName string, rawModel string, channel string, credits int, path string) error {
 	if credits <= 0 {
 		return nil
 	}
-	user, ok, err := repository.ConsumeUserCredits(userID, credits, now())
+	user, ok, err := repository.GetUserByID(userID)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return safeMessageError{message: "算力点不足"}
+		return safeMessageError{message: "用户不存在"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "rawModel": rawModel, "path": path})
+	extra := creditLogExtra(modelName, rawModel, channel, path)
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -353,13 +397,13 @@ func ConsumeUserCredits(userID string, modelName string, rawModel string, credit
 		Amount:    -credits,
 		Balance:   user.Credits,
 		Remark:    "调用模型 " + modelName,
-		Extra:     string(extra),
+		Extra:     extra,
 		CreatedAt: now(),
 	})
 	return err
 }
 
-func RefundUserCredits(userID string, modelName string, rawModel string, credits int, path string) error {
+func RefundUserCredits(userID string, modelName string, rawModel string, channel string, credits int, path string) error {
 	if credits <= 0 {
 		return nil
 	}
@@ -370,7 +414,7 @@ func RefundUserCredits(userID string, modelName string, rawModel string, credits
 	if !ok {
 		return safeMessageError{message: "用户不存在"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "rawModel": rawModel, "path": path})
+	extra := creditLogExtra(modelName, rawModel, channel, path)
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -378,10 +422,19 @@ func RefundUserCredits(userID string, modelName string, rawModel string, credits
 		Amount:    credits,
 		Balance:   user.Credits,
 		Remark:    "模型调用失败返还 " + modelName,
-		Extra:     string(extra),
+		Extra:     extra,
 		CreatedAt: now(),
 	})
 	return err
+}
+
+func creditLogExtra(modelName string, rawModel string, channel string, path string) string {
+	extra := map[string]string{"model": modelName, "rawModel": rawModel, "path": path}
+	if strings.TrimSpace(channel) != "" {
+		extra["channel"] = strings.TrimSpace(channel)
+	}
+	payload, _ := json.Marshal(extra)
+	return string(payload)
 }
 
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
@@ -433,7 +486,7 @@ func resolveCreditLogModels(logs []model.CreditLog) {
 	}
 	for i := range logs {
 		log := &logs[i]
-		if log.Type != model.CreditLogTypeAIConsume && log.Type != model.CreditLogTypeAIRefund {
+		if log.Type != model.CreditLogTypeAIConsume && log.Type != model.CreditLogTypeAIRefund && log.Type != model.CreditLogTypeSubscriptionConsume {
 			continue
 		}
 		var extra map[string]string

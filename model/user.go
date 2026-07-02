@@ -36,6 +36,7 @@ type User struct {
 	Extra       string     `json:"extra" gorm:"type:text"`
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
+	Subscription *SubscriptionSummary `json:"subscription,omitempty" gorm:"-"`
 }
 
 // UserList 用户分页结果。
@@ -78,10 +79,11 @@ func PublicUser(user User) AuthUser {
 type CreditLogType string
 
 const (
-	CreditLogTypeAdminAdjust CreditLogType = "admin_adjust"
-	CreditLogTypeAIConsume   CreditLogType = "ai_consume"
-	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
-	CreditLogTypeRedeem      CreditLogType = "redeem"
+	CreditLogTypeAdminAdjust         CreditLogType = "admin_adjust"
+	CreditLogTypeAIConsume           CreditLogType = "ai_consume"
+	CreditLogTypeAIRefund            CreditLogType = "ai_refund"
+	CreditLogTypeRedeem              CreditLogType = "redeem"
+	CreditLogTypeSubscriptionConsume CreditLogType = "subscription_consume"
 )
 
 // CreditLog 用户算力点变更流水。

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ProConfigProvider } from "@ant-design/pro-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App, ConfigProvider } from "antd";
@@ -22,8 +22,23 @@ const queryClient = new QueryClient({
 });
 
 export function AppProviders({ children }: { children: ReactNode }) {
-    const theme = useThemeStore((state) => state.theme);
+    const preference = useThemeStore((state) => state.preference);
+    const setResolvedTheme = useThemeStore((state) => state.setResolvedTheme);
+    const [systemTheme, setSystemTheme] = useState<"light" | "dark">("light");
+    const theme = preference === "system" ? systemTheme : preference;
     const dark = theme === "dark";
+
+    useEffect(() => {
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        const sync = () => setSystemTheme(media.matches ? "dark" : "light");
+        sync();
+        media.addEventListener("change", sync);
+        return () => media.removeEventListener("change", sync);
+    }, []);
+
+    useEffect(() => {
+        setResolvedTheme(theme);
+    }, [setResolvedTheme, theme]);
 
     useEffect(() => {
         document.documentElement.classList.toggle("dark", dark);

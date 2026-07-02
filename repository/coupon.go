@@ -53,7 +53,7 @@ func ListCoupons(q model.Query, status string) ([]model.Coupon, int64, error) {
 		return nil, 0, err
 	}
 	var coupons []model.Coupon
-	err = tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&coupons).Error
+	err = tx.Preload("Plan").Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&coupons).Error
 	return coupons, total, err
 }
 
@@ -78,8 +78,8 @@ func RedeemCoupon(code string, userID string, ts string) (model.Coupon, bool, er
 			return errCouponExpired
 		}
 		return tx.Model(&coupon).Updates(map[string]any{
-			"used_by":  userID,
-			"used_at":  ts,
+			"used_by":   userID,
+			"used_at":   ts,
 			"is_active": false,
 		}).Error
 	})
@@ -97,7 +97,7 @@ type couponError struct {
 	message string
 }
 
-func (e *couponError) Error() string   { return e.message }
+func (e *couponError) Error() string       { return e.message }
 func (e *couponError) SafeMessage() string { return e.message }
 
 // DeleteCouponsByIDs 批量删除兑换码。

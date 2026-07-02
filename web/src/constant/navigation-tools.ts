@@ -1,4 +1,4 @@
-import { FileText, ImagePlus, Images, Maximize2, Video } from "lucide-react";
+import { BadgeCheck, FileText, ImagePlus, Images, Maximize2, Video } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -25,6 +25,11 @@ export const navigationTools = [
         slug: "assets",
         label: "我的素材",
         icon: Images,
+    },
+    {
+        slug: "subscription",
+        label: "订阅",
+        icon: BadgeCheck,
     },
 ] as const;
 

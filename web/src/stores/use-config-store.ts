@@ -36,6 +36,7 @@ export type AiConfig = {
     vquality: string;
     videoGenerateAudio: string;
     videoWatermark: string;
+    videoMode: string;
     systemPrompt: string;
     models: string[];
     imageModels: string[];
@@ -80,6 +81,7 @@ export const defaultConfig: AiConfig = {
     vquality: "720",
     videoGenerateAudio: "true",
     videoWatermark: "false",
+    videoMode: "ti2vid",
     systemPrompt: "",
     models: [],
     imageModels: [],
@@ -264,6 +266,7 @@ export const useConfigStore = create<ConfigStore>()(
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
+                        videoMode: config.videoMode || "ti2vid",
                         canvasImageCount: config.canvasImageCount || "3",
                         channels: normalizeChannels(config),
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels) : filterModelsByCapability(config.models, "image"),

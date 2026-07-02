@@ -89,6 +89,7 @@ func New() *gin.Engine {
 	})
 
 	registerCouponRoutes(api, admin)
+	registerSubscriptionRoutes(api, admin)
 	registerAnnouncementRoutes(api, admin)
 
 	registerReleaseRoutes(api, admin)
@@ -98,4 +99,3 @@ func New() *gin.Engine {
 
 	return router
 }
-

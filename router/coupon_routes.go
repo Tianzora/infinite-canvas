@@ -7,6 +7,7 @@ import (
 )
 
 func registerCouponRoutes(api *gin.RouterGroup, admin *gin.RouterGroup) {
+	api.POST("/coupons/preview", middleware.UserAuth, gin.WrapF(handler.PreviewCouponRedeem))
 	api.POST("/coupons/redeem", middleware.UserAuth, gin.WrapF(handler.RedeemCoupon))
 	admin.POST("/coupons/generate", gin.WrapF(handler.AdminGenerateCoupons))
 	admin.GET("/coupons", gin.WrapF(handler.AdminCoupons))

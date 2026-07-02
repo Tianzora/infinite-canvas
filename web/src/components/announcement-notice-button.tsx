@@ -22,8 +22,8 @@ function formatAnnouncementDate(value?: string) {
 
 function AnnouncementTitleLine({ item }: { item: Announcement }) {
     return (
-        <div className="flex items-start justify-between gap-4">
-            <Typography.Text strong className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-4 pr-8">
+            <Typography.Text strong className="min-w-0 flex-1 break-words leading-5">
                 {item.title}
             </Typography.Text>
             <Typography.Text type="secondary" className="shrink-0 text-xs leading-5 tabular-nums">
@@ -91,10 +91,10 @@ export function AnnouncementNoticeButton({ userId, className, style }: Announcem
                         我知道了
                     </Button>,
                 ]}
-                width={560}
+                width={640}
                 destroyOnHidden
             >
-                <Typography.Paragraph className="!mb-0 text-stone-700 dark:text-stone-300">
+                <Typography.Paragraph className="!mb-0 min-h-[160px] whitespace-pre-wrap break-words text-stone-700 dark:text-stone-300">
                     <AnnouncementContent content={activePopup?.content || ""} />
                 </Typography.Paragraph>
             </Modal>

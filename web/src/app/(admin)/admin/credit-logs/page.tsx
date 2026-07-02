@@ -17,7 +17,18 @@ const creditLogTypeLabels: Record<string, string> = {
     admin_adjust: "后台调整",
     ai_consume: "模型消费",
     ai_refund: "失败返还",
+    redeem: "兑换码",
+    subscription_consume: "订阅消费",
 };
+
+function creditLogChannel(log: AdminCreditLog) {
+    try {
+        const extra = JSON.parse(log.extra || "{}") as { channel?: string };
+        return extra.channel || "";
+    } catch {
+        return "";
+    }
+}
 
 export default function AdminCreditLogsPage() {
     const { logs, keyword, page, pageSize, total, isLoading, searchLogs, changePage, changePageSize, resetFilters, refreshLogs, saveLog: saveAdminLog, deleteLog } = useAdminCreditLogs();
@@ -89,6 +100,15 @@ export default function AdminCreditLogsPage() {
             render: (_, item) => <Typography.Text type="secondary">{item.remark || "-"}</Typography.Text>,
         },
         {
+            title: "渠道",
+            dataIndex: "extra",
+            width: 140,
+            render: (_, item) => {
+                const channel = creditLogChannel(item);
+                return channel ? <Tag>{channel}</Tag> : <Typography.Text type="secondary">-</Typography.Text>;
+            },
+        },
+        {
             title: "创建时间",
             dataIndex: "createdAt",
             width: 180,
@@ -120,7 +140,7 @@ export default function AdminCreditLogsPage() {
                         <Row gutter={16} align="bottom">
                             <Col flex="360px">
                                 <Form.Item label="关键词">
-                                    <Input.Search value={keywordText} placeholder="搜索用户 ID、类型、备注或关联 ID" allowClear enterButton={<SearchOutlined />} onSearch={() => searchLogs(keywordText)} onChange={(event) => setKeywordText(event.target.value)} />
+                                    <Input.Search value={keywordText} placeholder="搜索用户 ID、类型、备注、渠道或关联 ID" allowClear enterButton={<SearchOutlined />} onSearch={() => searchLogs(keywordText)} onChange={(event) => setKeywordText(event.target.value)} />
                                 </Form.Item>
                             </Col>
                             <Col flex="none">

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 
 import { deleteCoupons, fetchAdminCoupons, generateCoupons, type GenerateCouponsParams } from "@/services/api/coupons";
+import { fetchAdminSubscriptionPlans } from "@/services/api/subscriptions";
 import { useUserStore } from "@/stores/use-user-store";
 
 const defaultPageSize = 10;
@@ -22,6 +23,13 @@ export function useAdminCoupons() {
     const query = useQuery({
         queryKey: ["admin", "coupons", token, keyword, status, page, pageSize],
         queryFn: () => fetchAdminCoupons(token, { keyword, status, page, pageSize }),
+        enabled: Boolean(token),
+        retry: false,
+    });
+
+    const planQuery = useQuery({
+        queryKey: ["admin", "subscription-plans", token, "coupon-select"],
+        queryFn: () => fetchAdminSubscriptionPlans(token, { page: 1, pageSize: 100 }),
         enabled: Boolean(token),
         retry: false,
     });
@@ -65,12 +73,13 @@ export function useAdminCoupons() {
 
     return {
         coupons: data?.items || [],
+        plans: planQuery.data?.items || [],
         keyword,
         status,
         page,
         pageSize,
         total: data?.total || 0,
-        isLoading: query.isFetching || generateMutation.isPending || deleteCouponsMutation.isPending,
+        isLoading: query.isFetching || planQuery.isFetching || generateMutation.isPending || deleteCouponsMutation.isPending,
         searchCoupons: (value = keyword) => updateFilters({ keyword: value }),
         changeStatus: (value: string) => updateFilters({ status: value }),
         changePage: (value: number) => updateFilters({ page: value }),

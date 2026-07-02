@@ -26,7 +26,7 @@ const secondOptions = [6, 10, 12, 16, 20];
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -109,6 +109,7 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
     const duration = normalizeSeedanceDuration(config.videoSeconds);
     const generateAudio = boolConfig(config.videoGenerateAudio, true);
     const watermark = boolConfig(config.videoWatermark, false);
+    const videoMode = config.videoMode || "ti2vid";
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -160,6 +161,18 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
                         <SwitchRow label="生成声音" checked={generateAudio} theme={theme} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} />
                         <SwitchRow label="添加水印" checked={watermark} theme={theme} onChange={(checked) => onConfigChange("videoWatermark", String(checked))} />
                     </div>
+                </SettingGroup>
+                <SettingGroup title="模式" color={theme.node.muted}>
+                    <Segmented
+                        className="w-full"
+                        size="small"
+                        value={videoMode}
+                        options={[
+                            { label: "普通", value: "ti2vid" },
+                            { label: "关键帧动画", value: "keyframes" },
+                        ]}
+                        onChange={(value) => onConfigChange("videoMode", value as string)}
+                    />
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>

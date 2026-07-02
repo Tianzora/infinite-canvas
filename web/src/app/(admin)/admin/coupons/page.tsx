@@ -15,10 +15,18 @@ const statusOptions = [
     { label: "已使用", value: "used" },
 ];
 
+type CouponFormValues = {
+    count: number;
+    type: "credits" | "subscription";
+    credits: number;
+    planId: string;
+    expiresAt: string;
+};
+
 export default function AdminCouponsPage() {
     const { message } = App.useApp();
-    const { coupons, keyword, status, page, pageSize, total, isLoading, searchCoupons, changeStatus, changePage, changePageSize, resetFilters, refreshCoupons, generateCoupons, deleteCoupons } = useAdminCoupons();
-    const [form] = Form.useForm<{ count: number; credits: number; expiresAt: string }>();
+    const { coupons, plans, keyword, status, page, pageSize, total, isLoading, searchCoupons, changeStatus, changePage, changePageSize, resetFilters, refreshCoupons, generateCoupons, deleteCoupons } = useAdminCoupons();
+    const [form] = Form.useForm<CouponFormValues>();
     const [keywordText, setKeywordText] = useState(keyword);
     const [isGenerateOpen, setIsGenerateOpen] = useState(false);
     const [generatedCodes, setGeneratedCodes] = useState<Coupon[]>([]);
@@ -28,7 +36,8 @@ export default function AdminCouponsPage() {
 
     const handleGenerate = async () => {
         const values = await form.validateFields();
-        const coupons = await generateCoupons({ count: values.count, credits: values.credits, expiresAt: values.expiresAt || undefined });
+        const type = values.type || "credits";
+        const coupons = await generateCoupons({ count: values.count, type, credits: type === "credits" ? values.credits : 0, planId: type === "subscription" ? values.planId : undefined, expiresAt: values.expiresAt || undefined });
         setGeneratedCodes(coupons);
         setIsGenerateOpen(false);
         form.resetFields();
@@ -43,9 +52,10 @@ export default function AdminCouponsPage() {
     const handleExportTxt = () => {
         const lines = coupons.map((c) => {
             const status = c.usedBy ? "已使用" : "未使用";
-            return `${c.code}\t${c.credits}\t${status}\t${c.usedBy || "-"}\t${c.usedAt ? dayjs(c.usedAt).format("YYYY-MM-DD HH:mm:ss") : "-"}\t${c.createdAt ? dayjs(c.createdAt).format("YYYY-MM-DD HH:mm:ss") : "-"}`;
+            const type = (c.type || "credits") === "subscription" ? "订阅" : "算力点";
+            return `${c.code}\t${type}\t${c.plan?.name || "-"}\t${c.credits}\t${status}\t${c.usedBy || "-"}\t${c.usedAt ? dayjs(c.usedAt).format("YYYY-MM-DD HH:mm:ss") : "-"}\t${c.createdAt ? dayjs(c.createdAt).format("YYYY-MM-DD HH:mm:ss") : "-"}`;
         });
-        const header = "兑换码\t额度\t状态\t使用者\t使用时间\t创建时间";
+        const header = "兑换码\t类型\t套餐\t额度\t状态\t使用者\t使用时间\t创建时间";
         const content = [header, ...lines].join("\n");
         const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
         const url = URL.createObjectURL(blob);
@@ -86,6 +96,21 @@ export default function AdminCouponsPage() {
                     {item.code}
                 </Typography.Text>
             ),
+        },
+        {
+            title: "类型",
+            dataIndex: "type",
+            width: 110,
+            render: (_, item) => {
+                const type = item.type || "credits";
+                return <Tag color={type === "subscription" ? "blue" : "green"}>{type === "subscription" ? "订阅" : "算力点"}</Tag>;
+            },
+        },
+        {
+            title: "套餐",
+            dataIndex: "planId",
+            width: 160,
+            render: (_, item) => <Typography.Text type="secondary">{item.plan?.name || "-"}</Typography.Text>,
         },
         {
             title: "额度",
@@ -197,7 +222,7 @@ export default function AdminCouponsPage() {
             </Flex>
 
             <Modal title="批量生成兑换码" open={isGenerateOpen} onCancel={() => setIsGenerateOpen(false)} onOk={() => void handleGenerate()} okText="生成" cancelText="取消" destroyOnHidden>
-                <Form form={form} layout="vertical" requiredMark={false}>
+                <Form form={form} layout="vertical" requiredMark={false} initialValues={{ type: "credits" }}>
                     <Row gutter={14}>
                         <Col span={12}>
                             <Form.Item name="count" label="数量" rules={[{ required: true, message: "请输入数量" }]}>
@@ -205,10 +230,27 @@ export default function AdminCouponsPage() {
                             </Form.Item>
                         </Col>
                         <Col span={12}>
-                            <Form.Item name="credits" label="额度" rules={[{ required: true, message: "请输入额度" }]}>
-                                <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+                            <Form.Item name="type" label="类型" rules={[{ required: true, message: "请选择类型" }]}>
+                                <Select options={[{ label: "算力点兑换码", value: "credits" }, { label: "订阅兑换码", value: "subscription" }]} />
                             </Form.Item>
                         </Col>
+                        <Form.Item noStyle shouldUpdate={(prev, next) => prev.type !== next.type}>
+                            {({ getFieldValue }) =>
+                                getFieldValue("type") === "subscription" ? (
+                                    <Col span={24}>
+                                        <Form.Item name="planId" label="套餐" rules={[{ required: true, message: "请选择套餐" }]}>
+                                            <Select placeholder="选择启用套餐" options={plans.filter((plan) => plan.isActive).map((plan) => ({ label: plan.name, value: plan.id }))} />
+                                        </Form.Item>
+                                    </Col>
+                                ) : (
+                                    <Col span={24}>
+                                        <Form.Item name="credits" label="额度" rules={[{ required: true, message: "请输入额度" }]}>
+                                            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+                                        </Form.Item>
+                                    </Col>
+                                )
+                            }
+                        </Form.Item>
                         <Col span={24}>
                             <Form.Item name="expiresAt" label="过期时间">
                                 <Input placeholder="如 2026-12-31T23:59:59+08:00，留空永不过期" />

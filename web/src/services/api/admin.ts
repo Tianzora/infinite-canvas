@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
+import type { SubscriptionSummary } from "@/services/api/subscriptions";
 
 export type AdminPromptCategory = {
     category: string;
@@ -26,6 +27,7 @@ export type AdminUser = {
     lastLoginAt: string;
     createdAt: string;
     updatedAt: string;
+    subscription?: SubscriptionSummary;
 };
 
 export type AdminUserListResponse = {

@@ -119,6 +119,22 @@ export default function AdminUsersPage() {
             render: (_, item) => <Typography.Text>{item.credits}</Typography.Text>,
         },
         {
+            title: "订阅",
+            dataIndex: "subscription",
+            width: 180,
+            render: (_, item) =>
+                item.subscription ? (
+                    <Space direction="vertical" size={0}>
+                        <Tag color="blue">{item.subscription.plan.name}</Tag>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            至 {dayjs(item.subscription.subscription.endsAt).format("YYYY-MM-DD")}
+                        </Typography.Text>
+                    </Space>
+                ) : (
+                    <Tag>未订阅</Tag>
+                ),
+        },
+        {
             title: "Linux.do",
             dataIndex: "linuxDoId",
             width: 140,

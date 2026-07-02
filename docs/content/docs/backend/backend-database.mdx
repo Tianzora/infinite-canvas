@@ -25,6 +25,9 @@ description: 当前后端主要数据表与字段说明
 - `assets`
 - `settings`
 - `coupons`
+- `subscription_plans`
+- `user_subscriptions`
+- `subscription_usages`
 - `announcements`
 - `tickets`
 - `ticket_replies`
@@ -196,13 +199,13 @@ description: 当前后端主要数据表与字段说明
 
 ### credit_logs
 
-用户算力点变更流水表。当前记录后台手动调整、模型调用预扣、模型调用失败返还和兑换码兑换。
+用户算力点变更流水表。当前记录后台手动调整、模型调用预扣、模型调用失败返还、订阅额度消费和兑换码兑换。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `user_id` | string | 关联用户 ID |
-| `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund` |
+| `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund`、`subscription_consume`、`redeem` |
 | `amount` | number | 本次变动数量，增加为正，扣减为负 |
 | `balance` | number | 变动后的用户算力点余额 |
 | `related_id` | string | 关联业务 ID，可为空 |
@@ -217,22 +220,74 @@ description: 当前后端主要数据表与字段说明
 | `admin_adjust` | 后台手动调整 |
 | `ai_consume` | 调用后端模型接口消费 |
 | `ai_refund` | 后端模型接口调用失败返还 |
+| `subscription_consume` | 调用后端模型接口消费订阅额度 |
 | `redeem` | 兑换码兑换 |
 
 ### coupons
 
-兑换码表。后台批量生成兑换码，前台用户输入码兑换算力点。
+兑换码表。后台批量生成兑换码，前台用户输入码兑换算力点或开通/续期订阅。订阅开通只通过兑换码完成，不包含支付、自动续费或后台手动开通入口。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `code` | string | 兑换码，唯一索引 |
-| `credits` | number | 兑换额度 |
+| `type` | string | 类型：`credits`、`subscription`；空值按 `credits` 处理 |
+| `plan_id` | string | 订阅兑换码绑定的套餐 ID，算力点兑换码为空 |
+| `credits` | number | 算力点兑换额度，订阅兑换码为 0 |
 | `used_by` | string | 使用者用户 ID，未使用为空 |
 | `used_at` | string | 使用时间，未使用为空 |
 | `expires_at` | string | 过期时间，为空表示永不过期 |
 | `is_active` | bool | 是否启用 |
 | `created_at` | string | 创建时间 |
+
+### subscription_plans
+
+订阅套餐表。后台配置月、季、年套餐及额度。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `name` | string | 套餐名 |
+| `period` | string | 周期：`monthly`、`quarterly`、`yearly` |
+| `daily_quota` | number | 每日额度 |
+| `monthly_quota` | number | 每月自然月总额度 |
+| `price_text` | string | 展示价格文案 |
+| `description` | text | 简介 |
+| `sort_order` | number | 排序 |
+| `is_active` | bool | 是否启用 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### user_subscriptions
+
+用户订阅表。用户同一时间只有一个有效订阅。订阅有效期内再次兑换订阅码会取消旧订阅，并从当前时间开始新套餐；即使是相同套餐也会覆盖订阅时间并重置订阅消耗状态，不做延期。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 用户 ID |
+| `plan_id` | string | 套餐 ID |
+| `status` | string | 状态：`active`、`canceled`、`expired` |
+| `starts_at` | string | 开始时间 |
+| `ends_at` | string | 到期时间 |
+| `canceled_at` | string | 取消时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### subscription_usages
+
+订阅额度使用流水表。AI 扣费时优先写入订阅额度流水；订阅额度不足或到期后再 fallback 到用户 `credits`。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 用户 ID |
+| `subscription_id` | string | 用户订阅 ID |
+| `usage_date` | string | 服务器日期，格式 `YYYY-MM-DD` |
+| `usage_month` | string | 服务器月份，格式 `YYYY-MM` |
+| `credits` | number | 本次消耗额度 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
 
 ### announcements
 

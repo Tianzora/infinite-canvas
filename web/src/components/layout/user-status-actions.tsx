@@ -37,6 +37,7 @@ const creditLogTypeLabels: Record<string, string> = {
     ai_consume: "模型消费",
     ai_refund: "失败返还",
     redeem: "兑换码",
+    subscription_consume: "订阅消费",
 };
 
 export function UserStatusActions({ showConfig = true, showVersion = false, versionSource = "local", variant = "default", onOpenShortcuts, accountOpen, onAccountOpenChange, accountRef, getPopupContainer }: UserStatusActionsProps) {

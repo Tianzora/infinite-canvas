@@ -137,7 +137,7 @@ func ListCreditLogs(q model.Query) ([]model.CreditLog, int64, error) {
 	tx := db.Model(&model.CreditLog{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ?", like, like, like, like)
+		tx = tx.Where("user_id LIKE ? OR type LIKE ? OR remark LIKE ? OR related_id LIKE ? OR extra LIKE ?", like, like, like, like, like)
 	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {

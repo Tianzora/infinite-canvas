@@ -244,6 +244,24 @@ func TestAIChatCompletionsProxyFailsOverToNextChannelForSameModel(t *testing.T) 
 	case <-time.After(time.Second):
 		t.Fatal("ok upstream did not receive request")
 	}
+
+	logs, err := service.ListCreditLogs(model.Query{PageSize: 10})
+	if err != nil {
+		t.Fatalf("list credit logs: %v", err)
+	}
+	var consumeExtra map[string]string
+	for _, item := range logs.Items {
+		if item.Type != model.CreditLogTypeAIConsume {
+			continue
+		}
+		if err := json.Unmarshal([]byte(item.Extra), &consumeExtra); err != nil {
+			t.Fatalf("decode consume extra: %v", err)
+		}
+		break
+	}
+	if consumeExtra["channel"] != "ok" {
+		t.Fatalf("credit log channel = %q, want ok", consumeExtra["channel"])
+	}
 }
 
 func TestAIVideoByVideoIDProxyUsesAgnesAPIWithoutV1Suffix(t *testing.T) {
@@ -315,8 +333,8 @@ func TestAIVideoByVideoIDProxyUsesAgnesAPIWithoutV1Suffix(t *testing.T) {
 	if captured.path != "/agnesapi" {
 		t.Fatalf("upstream path = %q, want /agnesapi", captured.path)
 	}
-	if captured.rawQuery != "video_id=video-123" {
-		t.Fatalf("upstream query = %q, want video_id=video-123", captured.rawQuery)
+	if captured.rawQuery != "model_name=agnes-video-v2.0&video_id=video-123" {
+		t.Fatalf("upstream query = %q, want model_name=agnes-video-v2.0&video_id=video-123", captured.rawQuery)
 	}
 	if captured.authorization != "Bearer upstream-key" {
 		t.Fatalf("upstream authorization = %q", captured.authorization)

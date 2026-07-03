@@ -403,7 +403,7 @@ func SaveCreditConsumeLog(userID string, modelName string, rawModel string, chan
 	return err
 }
 
-func RefundUserCredits(userID string, modelName string, rawModel string, channel string, credits int, path string) error {
+func RefundUserCredits(userID string, modelName string, rawModel string, channel string, credits int, path string, failureReason string) error {
 	if credits <= 0 {
 		return nil
 	}
@@ -414,7 +414,7 @@ func RefundUserCredits(userID string, modelName string, rawModel string, channel
 	if !ok {
 		return safeMessageError{message: "用户不存在"}
 	}
-	extra := creditLogExtra(modelName, rawModel, channel, path)
+	extra := creditLogExtra(modelName, rawModel, channel, path, failureReason)
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -428,10 +428,13 @@ func RefundUserCredits(userID string, modelName string, rawModel string, channel
 	return err
 }
 
-func creditLogExtra(modelName string, rawModel string, channel string, path string) string {
+func creditLogExtra(modelName string, rawModel string, channel string, path string, failureReason ...string) string {
 	extra := map[string]string{"model": modelName, "rawModel": rawModel, "path": path}
 	if strings.TrimSpace(channel) != "" {
 		extra["channel"] = strings.TrimSpace(channel)
+	}
+	if len(failureReason) > 0 && strings.TrimSpace(failureReason[0]) != "" {
+		extra["failureReason"] = strings.TrimSpace(failureReason[0])
 	}
 	payload, _ := json.Marshal(extra)
 	return string(payload)

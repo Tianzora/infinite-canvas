@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"sort"
@@ -302,17 +301,10 @@ func SelectModelChannelCandidates(modelName string) ([]ModelChannelCandidate, er
 }
 
 func SelectWeightedModelChannel(candidates []ModelChannelCandidate) ModelChannelCandidate {
-	total := 0
-	for _, item := range candidates {
-		total += item.Channel.Weight
-	}
-	hit := rand.Intn(total)
 	selected := candidates[0]
 	for _, item := range candidates {
-		hit -= item.Channel.Weight
-		if hit < 0 {
+		if item.Channel.Weight > selected.Channel.Weight {
 			selected = item
-			break
 		}
 	}
 	return selected

@@ -264,6 +264,81 @@ func TestAIChatCompletionsProxyFailsOverToNextChannelForSameModel(t *testing.T) 
 	}
 }
 
+func TestAIProxyRefundLogIncludesFailureReason(t *testing.T) {
+	previousConfig := config.Cfg
+	t.Cleanup(func() { config.Cfg = previousConfig })
+
+	failingUpstream := newLocalHTTPServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"message":"image quota exhausted"}}`, http.StatusTooManyRequests)
+	}))
+	defer failingUpstream.Close()
+
+	config.Cfg = config.Config{
+		StorageDriver:  "sqlite",
+		DatabaseDSN:    "file:ai-proxy-refund-reason-test?mode=memory&cache=shared",
+		JWTSecret:      "test-secret",
+		JWTExpireHours: 1,
+	}
+	_, err := repository.SaveSettings(model.Settings{
+		Public: model.PublicSetting{
+			ModelChannel: model.PublicModelChannelSetting{ModelCosts: []model.ModelCost{{Model: "gpt-image-2", Credits: 3}}},
+		},
+		Private: model.PrivateSetting{
+			Channels: []model.ModelChannel{
+				{Name: "failing", BaseURL: failingUpstream.URL, APIKey: "fail-key", Models: []string{"gpt-image-2"}, Weight: 1, Enabled: true},
+			},
+		},
+	}, time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("save settings: %v", err)
+	}
+	session, err := service.Register("refund-user", "secret")
+	if err != nil {
+		t.Fatalf("register user: %v", err)
+	}
+	if _, err := service.AdjustUserCredits(session.User.ID, 100); err != nil {
+		t.Fatalf("adjust credits: %v", err)
+	}
+
+	server := newLocalHTTPServer(t, router.New())
+	defer server.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"model":    "gpt-image-2",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	})
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+session.Token)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("chat proxy request: %v", err)
+	}
+	defer response.Body.Close()
+
+	logs, err := service.ListCreditLogs(model.Query{PageSize: 10})
+	if err != nil {
+		t.Fatalf("list credit logs: %v", err)
+	}
+	var refundExtra map[string]string
+	for _, item := range logs.Items {
+		if item.Type != model.CreditLogTypeAIRefund {
+			continue
+		}
+		if err := json.Unmarshal([]byte(item.Extra), &refundExtra); err != nil {
+			t.Fatalf("decode refund extra: %v", err)
+		}
+		break
+	}
+	if !strings.Contains(refundExtra["failureReason"], "image quota exhausted") {
+		t.Fatalf("failureReason = %q, want upstream reason", refundExtra["failureReason"])
+	}
+}
+
 func TestAIVideoByVideoIDProxyUsesAgnesAPIWithoutV1Suffix(t *testing.T) {
 	previousConfig := config.Cfg
 	t.Cleanup(func() { config.Cfg = previousConfig })

@@ -65,6 +65,26 @@ func TestBuildModelChannelURLNormalizesArkPlanTaskPath(t *testing.T) {
 	}
 }
 
+func TestSelectWeightedModelChannelTreatsWeightAsPriority(t *testing.T) {
+	candidates := []ModelChannelCandidate{{
+		Channel:  model.ModelChannel{Name: "primary", Weight: 10},
+		RawModel: "gpt-image-2",
+	}}
+	for i := 0; i < 100; i++ {
+		candidates = append(candidates, ModelChannelCandidate{
+			Channel:  model.ModelChannel{Name: "fallback", Weight: 1},
+			RawModel: "gpt-image-2",
+		})
+	}
+
+	for i := 0; i < 20; i++ {
+		selected := SelectWeightedModelChannel(candidates)
+		if selected.Channel.Name != "primary" {
+			t.Fatalf("selected channel = %q, want primary", selected.Channel.Name)
+		}
+	}
+}
+
 func TestNormalizeSettingsPublishesEnabledChannelModelsAndRepairsDefaults(t *testing.T) {
 	settings := normalizeSettings(model.Settings{
 		Public: model.PublicSetting{

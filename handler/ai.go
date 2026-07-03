@@ -181,7 +181,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if reservation.Source == service.CreditReservationSourceSubscription {
 		err = service.RefundCreditReservation(reservation)
 	} else {
-		err = service.RefundUserCredits(user.ID, modelName, chargeRawModel, chargeChannel, credits, chargePath)
+		err = service.RefundUserCredits(user.ID, modelName, chargeRawModel, chargeChannel, credits, chargePath, lastMessage)
 	}
 	if err != nil {
 		log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)

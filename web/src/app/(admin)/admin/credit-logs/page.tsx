@@ -12,6 +12,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { useAdminCreditLogs } from "./use-admin-credit-logs";
 
 type CreditLogFormValues = Partial<AdminCreditLog>;
+type CreditLogExtra = { channel?: string; failureReason?: string };
 
 const creditLogTypeLabels: Record<string, string> = {
     admin_adjust: "后台调整",
@@ -21,13 +22,21 @@ const creditLogTypeLabels: Record<string, string> = {
     subscription_consume: "订阅消费",
 };
 
-function creditLogChannel(log: AdminCreditLog) {
+function creditLogExtra(log: AdminCreditLog): CreditLogExtra {
     try {
-        const extra = JSON.parse(log.extra || "{}") as { channel?: string };
-        return extra.channel || "";
+        return JSON.parse(log.extra || "{}") as CreditLogExtra;
     } catch {
-        return "";
+        return {};
     }
+}
+
+function creditLogChannel(log: AdminCreditLog) {
+    return creditLogExtra(log).channel || "";
+}
+
+function creditLogFailureReason(log: AdminCreditLog) {
+    if (log.type !== "ai_refund") return "";
+    return creditLogExtra(log).failureReason || "";
 }
 
 export default function AdminCreditLogsPage() {
@@ -106,6 +115,24 @@ export default function AdminCreditLogsPage() {
             render: (_, item) => {
                 const channel = creditLogChannel(item);
                 return channel ? <Tag>{channel}</Tag> : <Typography.Text type="secondary">-</Typography.Text>;
+            },
+        },
+        {
+            title: "失败原因",
+            dataIndex: "extra",
+            width: 240,
+            ellipsis: true,
+            render: (_, item) => {
+                const reason = creditLogFailureReason(item);
+                return reason ? (
+                    <Tooltip title={reason}>
+                        <Typography.Text type="danger" ellipsis>
+                            {reason}
+                        </Typography.Text>
+                    </Tooltip>
+                ) : (
+                    <Typography.Text type="secondary">-</Typography.Text>
+                );
             },
         },
         {

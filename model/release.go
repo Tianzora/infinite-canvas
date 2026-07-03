@@ -29,8 +29,8 @@ type ReleaseList struct {
 
 // PublicRelease 前台版本更新。
 type PublicRelease struct {
-	Version string             `json:"version"`
-	Date    string             `json:"date"`
+	Version string              `json:"version"`
+	Date    string              `json:"date"`
 	Items   []PublicReleaseItem `json:"items"`
 }
 
@@ -45,4 +45,5 @@ type GenerateReleaseRequest struct {
 	Version string `json:"version"`
 	Title   string `json:"title"`
 	Notes   string `json:"notes"`
+	Model   string `json:"model"`
 }

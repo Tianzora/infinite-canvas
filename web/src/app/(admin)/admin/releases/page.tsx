@@ -2,11 +2,12 @@
 
 import { DeleteOutlined, EditOutlined, ExperimentOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
-import { Button, Card, Col, Drawer, Flex, Form, Input, Modal, Row, Space, Switch, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Col, Drawer, Flex, Form, Input, Modal, Row, Select, Space, Switch, Tag, Tooltip, Typography } from "antd";
 import dayjs from "dayjs";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { AdminRelease } from "@/services/api/admin-releases";
+import { modelOptionLabel, useEffectiveConfig } from "@/stores/use-config-store";
 import { useAdminReleases } from "./use-admin-releases";
 
 type ReleaseFormValues = {
@@ -22,6 +23,7 @@ type GenerateFormValues = {
     version: string;
     title: string;
     notes: string;
+    model: string;
 };
 
 function parseItemsText(text: string): AdminRelease["items"] {
@@ -66,6 +68,8 @@ export default function AdminReleasesPage() {
     const [editingItem, setEditingItem] = useState<Partial<AdminRelease> | null>(null);
     const [deletingItem, setDeletingItem] = useState<AdminRelease | null>(null);
     const [generateOpen, setGenerateOpen] = useState(false);
+    const effectiveConfig = useEffectiveConfig();
+    const textModels = useMemo(() => Array.from(new Set([effectiveConfig.textModel, ...effectiveConfig.textModels].filter(Boolean))), [effectiveConfig.textModel, effectiveConfig.textModels]);
 
     useEffect(() => setKeywordText(keyword), [keyword]);
 
@@ -106,6 +110,11 @@ export default function AdminReleasesPage() {
         await generateRelease(values);
         setGenerateOpen(false);
         generateForm.resetFields();
+    };
+
+    const openGenerate = () => {
+        generateForm.setFieldsValue({ model: effectiveConfig.textModel || effectiveConfig.model });
+        setGenerateOpen(true);
     };
 
     const columns: ProColumns<AdminRelease>[] = [
@@ -206,7 +215,7 @@ export default function AdminReleasesPage() {
                     }
                     options={{ density: true, setting: true, reload: () => void refreshReleases() }}
                     toolBarRender={() => [
-                        <Button key="generate" icon={<ExperimentOutlined />} onClick={() => setGenerateOpen(true)}>
+                        <Button key="generate" icon={<ExperimentOutlined />} onClick={openGenerate}>
                             AI 生成
                         </Button>,
                         <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => setEditingItem({ active: true, releaseDate: dayjs().format("YYYY-MM-DD") })}>
@@ -307,6 +316,14 @@ export default function AdminReleasesPage() {
                     </Form.Item>
                     <Form.Item name="title" label="标题">
                         <Input placeholder="版本标题（可选）" />
+                    </Form.Item>
+                    <Form.Item name="model" label="文本模型" rules={[{ required: true, message: "请选择文本模型" }]}>
+                        <Select
+                            showSearch
+                            placeholder="选择用于整理更新记录的文本模型"
+                            optionFilterProp="label"
+                            options={textModels.map((model) => ({ label: modelOptionLabel(effectiveConfig, model), value: model }))}
+                        />
                     </Form.Item>
                     <Form.Item name="notes" label="变更说明" tooltip="填写本次变更的要点，AI 会自动整理成结构化更新记录">
                         <Input.TextArea rows={6} placeholder="本次主要变更：&#10;- 新增了某某功能&#10;- 修复了某某问题&#10;- 调整了某某逻辑" />

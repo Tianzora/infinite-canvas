@@ -16,6 +16,8 @@ import (
 
 var releaseItemPattern = regexp.MustCompile(`^\+\s+\[(.+?)\]\s+(.+)$`)
 
+const releaseAISystemPrompt = "你是 Infinite Canvas 的版本更新记录编辑。你只把输入内容整理成可直接保存的更新日志条目，不编造未提供的信息。"
+
 // ListPublicReleases 获取前台版本更新。
 func ListPublicReleases() ([]model.PublicRelease, error) {
 	items, err := repository.ListActiveReleases()
@@ -88,7 +90,7 @@ func GenerateReleaseNote(req model.GenerateReleaseRequest) (model.Release, error
 	if strings.TrimSpace(req.Version) == "" {
 		return model.Release{}, safeMessageError{message: "版本号不能为空"}
 	}
-	items, err := generateReleaseItemsWithAI(req.Version, req.Title, req.Notes)
+	items, err := generateReleaseItemsWithAI(req.Version, req.Title, req.Notes, req.Model)
 	if err != nil {
 		return model.Release{}, err
 	}
@@ -131,13 +133,16 @@ func ParseReleaseItemsFromAIOutput(text string) []model.ReleaseItem {
 	return items
 }
 
-func generateReleaseItemsWithAI(version string, title string, notes string) ([]model.ReleaseItem, error) {
+func generateReleaseItemsWithAI(version string, title string, notes string, requestedModel string) ([]model.ReleaseItem, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return nil, err
 	}
 	normalized := normalizeSettings(settings)
-	modelName := normalized.Public.ModelChannel.DefaultTextModel
+	modelName := strings.TrimSpace(requestedModel)
+	if modelName == "" {
+		modelName = normalized.Public.ModelChannel.DefaultTextModel
+	}
 	if modelName == "" {
 		for _, m := range normalized.Public.ModelChannel.AvailableModels {
 			if strings.TrimSpace(m) != "" {
@@ -149,15 +154,15 @@ func generateReleaseItemsWithAI(version string, title string, notes string) ([]m
 	if modelName == "" {
 		return nil, safeMessageError{message: "未配置可用文本模型，请先在系统设置中配置模型渠道"}
 	}
-	channel, _, err := SelectModelChannel(modelName)
+	channel, rawModel, err := SelectModelChannel(modelName)
 	if err != nil {
 		return nil, safeMessageError{message: "未找到可用的模型渠道：" + err.Error()}
 	}
 	prompt := buildReleaseAIPrompt(version, title, notes)
 	body, _ := json.Marshal(map[string]any{
-		"model": modelName,
+		"model": rawModel,
 		"messages": []map[string]string{
-			{"role": "system", "content": "你是一个版本更新记录助手。根据用户提供的版本信息，生成结构化的版本更新条目。每条必须以 \"+ [类型] 内容\" 的格式输出，类型只能是：新增、修复、调整、优化、文档。只输出更新条目，不要输出其他内容。"},
+			{"role": "system", "content": releaseAISystemPrompt},
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.3,
@@ -197,13 +202,24 @@ func generateReleaseItemsWithAI(version string, title string, notes string) ([]m
 
 func buildReleaseAIPrompt(version string, title string, notes string) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("请为以下版本生成更新记录：\n版本号：%s", version))
+	b.WriteString("请把下面输入整理为版本更新记录。只根据输入内容整理，不要编造未提供的信息。\n\n")
+	b.WriteString("输出格式模板：\n")
+	b.WriteString("+ [新增] 内容\n")
+	b.WriteString("+ [修复] 内容\n")
+	b.WriteString("+ [优化] 内容\n")
+	b.WriteString("+ [调整] 内容\n")
+	b.WriteString("+ [文档] 内容\n\n")
+	b.WriteString("规则：\n")
+	b.WriteString("- 每行必须以 + [类型] 开头，类型只能从模板中选择。\n")
+	b.WriteString("- 同类变更可以合并成一条，内容要面向用户，简洁具体。\n")
+	b.WriteString("- 不要输出 Markdown 标题、编号、解释、前后缀或代码块。\n")
+	b.WriteString("- 输入很粗糙时，按真实含义改写为自然中文。\n\n")
+	b.WriteString(fmt.Sprintf("版本号：%s", version))
 	if title != "" {
 		b.WriteString(fmt.Sprintf("\n标题：%s", title))
 	}
 	if notes != "" {
 		b.WriteString(fmt.Sprintf("\n变更说明：\n%s", notes))
 	}
-	b.WriteString("\n\n请按 \"+ [类型] 内容\" 格式输出每条更新。")
 	return b.String()
 }

@@ -28,6 +28,7 @@ export type GenerateReleaseRequest = {
     version: string;
     title?: string;
     notes?: string;
+    model?: string;
 };
 
 export async function fetchAdminReleases(token: string, query: ApiParams = {}) {

@@ -8,6 +8,7 @@ import { App, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 
 import { ClientRootInit } from "@/components/layout/client-root-init";
+import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -50,6 +51,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
             <ProConfigProvider dark={dark}>
                 <App>
                     <QueryClientProvider client={queryClient}>
+                        <AnalyticsTracker />
                         <ClientRootInit>{children}</ClientRootInit>
                     </QueryClientProvider>
                 </App>

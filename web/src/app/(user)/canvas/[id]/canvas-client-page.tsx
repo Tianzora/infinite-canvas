@@ -200,6 +200,51 @@ function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: Pending
     );
 }
 
+function NodeCreateMenu({ position, onCreate, onClose }: { position: Position; onCreate: (type: CanvasNodeType) => void; onClose: () => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const menuRef = useRef<HTMLDivElement>(null);
+    const [renderPosition, setRenderPosition] = useState(position);
+
+    useLayoutEffect(() => {
+        const menu = menuRef.current;
+        const container = menu?.parentElement;
+        if (!menu || !container) return;
+
+        const padding = 12;
+        const clamp = (value: number, max: number) => Math.min(Math.max(value, padding), Math.max(padding, max));
+        setRenderPosition({
+            x: clamp(position.x, container.clientWidth - menu.offsetWidth - padding),
+            y: clamp(position.y, container.clientHeight - menu.offsetHeight - padding),
+        });
+    }, [position.x, position.y]);
+
+    return (
+        <div
+            ref={menuRef}
+            className="absolute z-[120] w-[300px] rounded-[18px] border p-3 shadow-2xl backdrop-blur"
+            data-canvas-no-zoom
+            style={{ left: renderPosition.x, top: renderPosition.y, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text, maxHeight: "calc(100% - 24px)", overflowY: "auto" }}
+            onPointerDown={(event) => event.stopPropagation()}
+        >
+            <div className="mb-2 flex items-center justify-between px-1">
+                <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
+                    选择节点
+                </span>
+                <button type="button" className="grid size-7 place-items-center rounded-lg text-base opacity-55 transition hover:bg-white/10 hover:opacity-100" onClick={onClose} aria-label="关闭">
+                    ×
+                </button>
+            </div>
+            <div className="grid gap-1">
+                <ConnectionCreateOption theme={theme} icon={<List className="size-5" />} title="文本" onClick={() => onCreate(CanvasNodeType.Text)} />
+                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-5" />} title="图片" onClick={() => onCreate(CanvasNodeType.Image)} />
+                <ConnectionCreateOption theme={theme} icon={<Video className="size-5" />} title="视频" onClick={() => onCreate(CanvasNodeType.Video)} />
+                <ConnectionCreateOption theme={theme} icon={<Music2 className="size-5" />} title="音频" onClick={() => onCreate(CanvasNodeType.Audio)} />
+                <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-5" />} title="生成配置" onClick={() => onCreate(CanvasNodeType.Config)} />
+            </div>
+        </div>
+    );
+}
+
 function ConnectionCreateOption({ theme, icon, title, description, onClick }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; icon: React.ReactNode; title: string; description?: string; onClick?: () => void }) {
     return (
         <button type="button" className="flex h-16 w-full cursor-pointer items-center gap-3 rounded-2xl px-3 text-left transition" style={{ color: theme.node.text }} onClick={onClick} onMouseEnter={(event) => (event.currentTarget.style.background = theme.node.fill)} onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}>
@@ -276,6 +321,7 @@ function InfiniteCanvasPage() {
     const [mouseWorld, setMouseWorld] = useState<Position>({ x: 0, y: 0 });
     const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [nodeCreatePosition, setNodeCreatePosition] = useState<{ canvas: Position; screen: Position } | null>(null);
     const [runningNodeId, setRunningNodeId] = useState<string | null>(null);
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
@@ -784,6 +830,7 @@ function InfiniteCanvasPage() {
         setSelectedNodeIds(new Set());
         setSelectedConnectionId(null);
         setContextMenu(null);
+        setNodeCreatePosition(null);
         setSelectionBox(null);
         setHoveredNodeId(null);
         setToolbarNodeId(null);
@@ -968,6 +1015,7 @@ function InfiniteCanvasPage() {
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {
             setContextMenu(null);
+            setNodeCreatePosition(null);
             if (pendingConnectionCreateRef.current) cancelPendingConnectionCreate();
             if (event.button !== 0) return;
 
@@ -1345,6 +1393,7 @@ function InfiniteCanvasPage() {
                 setSelectedNodeIds(new Set());
                 setSelectedConnectionId(null);
                 setContextMenu(null);
+                setNodeCreatePosition(null);
                 setSelectionBox(null);
                 setConnecting(null);
                 setHoveredNodeId(null);
@@ -2430,6 +2479,29 @@ const openAgent = (mode: CanvasAgentMode = agentMode) => {
                     }}
                     onCanvasMouseDown={handleCanvasMouseDown}
                     onCanvasDeselect={deselectCanvas}
+                    onCanvasDoubleClick={(event) => {
+                        const rect = containerRef.current?.getBoundingClientRect();
+                        if (!rect) return;
+                        setContextMenu(null);
+                        setNodeCreatePosition({
+                            canvas: screenToCanvas(event.clientX, event.clientY),
+                            screen: { x: event.clientX - rect.left, y: event.clientY - rect.top },
+                        });
+                    }}
+                    overlay={
+                        nodeCreatePosition ? (
+                            <NodeCreateMenu
+                                position={nodeCreatePosition.screen}
+                                onCreate={(type) => {
+                                    const target = nodeCreatePosition;
+                                    if (!target) return;
+                                    createNode(type, target.canvas);
+                                    setNodeCreatePosition(null);
+                                }}
+                                onClose={() => setNodeCreatePosition(null)}
+                            />
+                        ) : null
+                    }
                     onContextMenu={preventCanvasContextMenu}
                     onDrop={handleDrop}
                 >
@@ -2556,6 +2628,7 @@ const openAgent = (mode: CanvasAgentMode = agentMode) => {
                     {selectionBox ? (
                         <div
                             className="pointer-events-none absolute z-[100] border"
+                            data-canvas-selection
                             style={{
                                 left: Math.min(selectionBox.startWorldX, selectionBox.currentWorldX),
                                 top: Math.min(selectionBox.startWorldY, selectionBox.currentWorldY),

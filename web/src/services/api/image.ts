@@ -107,6 +107,10 @@ function normalizeQuality(quality: string) {
     return QUALITY_BASE[normalized] ? normalized : undefined;
 }
 
+function normalizeBackground(background: string | undefined) {
+    return background?.trim().toLowerCase() === "transparent" ? "transparent" : undefined;
+}
+
 /** Map "quality + ratio" to an explicit pixel dimension like "3840x2160". */
 function resolveSize(quality: string | undefined, ratio: string, isAgnesImage = false): string {
     const parsedRatio = parseImageRatio(ratio);
@@ -364,6 +368,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size, isAgnesImageConfig(config));
+    const background = normalizeBackground(config.background);
     try {
         if (isAgnesImageConfig(config)) {
             const response = await axios.post<ImageApiResponse>(
@@ -373,6 +378,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
                     prompt: withSystemPrompt(config, prompt),
                     n,
                     size: requestSize || "1024x1024",
+                    ...(background ? { background } : {}),
                     extra_body: { response_format: "b64_json" },
                 },
                 { headers: aiHeaders(config, "application/json") },
@@ -389,6 +395,7 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
                 n,
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
+                ...(background ? { background } : {}),
                 response_format: "b64_json",
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
@@ -409,6 +416,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size, isAgnesImageConfig(config));
+    const background = normalizeBackground(config.background);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     if (isAgnesImageConfig(config)) {
         if (mask) throw new Error("Agnes 图片模型暂不支持蒙版编辑，请移除蒙版或切换到支持 /images/edits 的模型");
@@ -421,6 +429,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                     prompt: withSystemPrompt(config, requestPrompt),
                     n,
                     size: requestSize || "1024x1024",
+                    ...(background ? { background } : {}),
                     extra_body: {
                         image: images,
                         response_format: "b64_json",
@@ -446,6 +455,9 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     }
     if (requestSize) {
         formData.set("size", requestSize);
+    }
+    if (background) {
+        formData.set("background", background);
     }
     const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => formData.append("image", file));

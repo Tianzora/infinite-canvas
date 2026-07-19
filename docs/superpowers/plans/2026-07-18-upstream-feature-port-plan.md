@@ -6,7 +6,7 @@
 - [x] 保留当前 Next.js App Router、Go 后端、登录/订阅/兑换码/公告/工单和浏览器本地持久化；未迁移 Vite 入口、未删除后端目录。
 - [x] 上游同步记录：原定功能范围 `bd0ad0aebf613a5e4cfb44491017a9915e390808..bdca6b0a5c193b8c85dfbf7c6a433d62f02da9df`；补同步 Agent 更新 `062e4569aa6b0f3cba47cf92288d7557daf21490`、`5e1fd7a825ebcb89c0351ce0aec05076d1b7aa99`；上游 `plugins-dist` 清单提交 `dd1a3905bfe61dd0fcbe99856174fe499f9c6431`。
 - [x] `bun test tests`、`bunx tsc --noEmit`、`canvas-agent npm test`、`canvas-agent npm run build`、`go test ./...` 和官方插件 registry 构建已通过。
-- [ ] 浏览器端真实 Agent、插件动态加载、四类模型脚本、Prompt Source 远程刷新和 analytics 请求仍需人工回归，详见 `docs/content/docs/progress/pending-test.mdx`。
+- [x] 浏览器端真实 Agent、插件动态加载、四类模型脚本、Prompt Source 远程刷新和 analytics 请求已完成人工回归；对应事项已从 `docs/content/docs/progress/pending-test.mdx` 移入功能说明。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -593,15 +593,15 @@ git commit -m "port(upstream): add next runtime analytics"
 
 只记录本次真实移植的功能域，不复制上游完整 CHANGELOG，也不修改版本号。
 
-- [ ] **Step 2: 更新待测试清单**
+- [x] **Step 2: 更新待测试清单**
 
-把 Prompt 芯片、Agent site tools、模型脚本、插件节点、侧栏导出、Prompt Source 脚本和统计配置列入 pending-test.mdx；用户确认后再从 pending 移到 features。
+已将 Prompt 芯片、Agent site tools、模型脚本、插件节点、侧栏导出、Prompt Source 脚本和统计配置从 pending-test.mdx 移入 features.mdx。
 
-- [ ] **Step 3: 检查文档边界**
+- [x] **Step 3: 检查文档边界**
 
 明确画布和“我的素材”仍主要存于浏览器本地，API Key 仍由浏览器前端直接请求 OpenAI 兼容接口，Go 后端和当前 Docker 路径未被删除或宣称已完成迁移。
 
-- [ ] **Step 4: 最终差异审计**
+- [x] **Step 4: 最终差异审计**
 
 ~~~powershell
 git diff --check

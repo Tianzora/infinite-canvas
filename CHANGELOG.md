@@ -9,6 +9,7 @@
 + [同步] 选择性同步上游功能范围 `bd0ad0aebf613a5e4cfb44491017a9915e390808..bdca6b0a5c193b8c85dfbf7c6a433d62f02da9df`，并补同步 Agent 更新至 `5e1fd7a825ebcb89c0351ce0aec05076d1b7aa99`；官方插件注册表使用上游 `plugins-dist` 提交 `dd1a3905bfe61dd0fcbe99856174fe499f9c6431`。
 + [优化] 保留当前 Next.js、Go 后端、登录/订阅/兑换码/公告/工单和本地持久化定制，未进行 Vite 入口迁移或后端删除。
 + [测试] 增加 Prompt 芯片、模型脚本和 Prompt Source 运行时回归测试，并完成前端类型检查与 Canvas Agent 构建检查。
++ [测试] 已完成人工回归：Agent、插件动态加载、四类模型脚本、Prompt Source 刷新和 analytics 配置。
 
 ## v1.1.5 - 2026-07-03
 

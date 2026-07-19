@@ -10,7 +10,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/fairchildovo/infinite-canvas
+  IMAGE_NAME: ghcr.io/tianzora/infinite-canvas
 
 jobs:
   meta:

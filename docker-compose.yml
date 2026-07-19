@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${SYSTEM_UPDATE_IMAGE:-ghcr.nju.edu.cn/fairchildovo/infinite-canvas:latest}
+    image: ${SYSTEM_UPDATE_IMAGE:-ghcr.nju.edu.cn/tianzora/infinite-canvas:latest}
     container_name: infinite-canvas
     env_file:
       - .env

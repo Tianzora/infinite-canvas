@@ -2,9 +2,10 @@
 
 ## Execution Status
 
-- [x] Agent 流式连接、站点工具、模型调用脚本、Prompt 芯片、插件运行时、官方插件、画布侧栏/导出、Prompt Source 和 Next analytics 已完成代码接入。
+- [x] Agent 流式连接、共享 Codex 会话、客户端隔离、生成任务状态查询、站点工具、模型调用脚本、Prompt 芯片、插件运行时、官方插件、画布侧栏/导出、Prompt Source 和 Next analytics 已完成代码接入。
 - [x] 保留当前 Next.js App Router、Go 后端、登录/订阅/兑换码/公告/工单和浏览器本地持久化；未迁移 Vite 入口、未删除后端目录。
-- [x] `bun test tests`、`bunx tsc --noEmit`、`canvas-agent npm run build` 和官方插件 registry 构建已通过。
+- [x] 上游同步记录：原定功能范围 `bd0ad0aebf613a5e4cfb44491017a9915e390808..bdca6b0a5c193b8c85dfbf7c6a433d62f02da9df`；补同步 Agent 更新 `062e4569aa6b0f3cba47cf92288d7557daf21490`、`5e1fd7a825ebcb89c0351ce0aec05076d1b7aa99`；上游 `plugins-dist` 清单提交 `dd1a3905bfe61dd0fcbe99856174fe499f9c6431`。
+- [x] `bun test tests`、`bunx tsc --noEmit`、`canvas-agent npm test`、`canvas-agent npm run build`、`go test ./...` 和官方插件 registry 构建已通过。
 - [ ] 浏览器端真实 Agent、插件动态加载、四类模型脚本、Prompt Source 远程刷新和 analytics 请求仍需人工回归，详见 `docs/content/docs/progress/pending-test.mdx`。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

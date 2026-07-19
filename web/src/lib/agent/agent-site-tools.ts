@@ -1,6 +1,7 @@
 import { fetchPrompts } from "@/services/api/prompts";
 import { uploadImage } from "@/services/image-storage";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
+import type { CanvasAgentSnapshot } from "@/app/(user)/canvas/utils/canvas-agent-ops";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, modelOptionName, normalizeModelOptionValue, useConfigStore } from "@/stores/use-config-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
@@ -8,6 +9,7 @@ import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 export const SITE_TOOL_NAMES = [
     "site_navigate",
     "canvas_list_projects",
+    "generation_get_status",
     "workbench_image_get_config",
     "workbench_image_generate",
     "workbench_video_get_config",
@@ -20,10 +22,14 @@ export const SITE_TOOL_NAMES = [
 export type SiteToolName = (typeof SITE_TOOL_NAMES)[number];
 type SiteToolInput = Record<string, unknown>;
 type Navigate = (path: string) => void;
+type SiteToolContext = { canvasSnapshot?: CanvasAgentSnapshot | null };
+type GenerationStatus = "idle" | "queued" | "running" | "succeeded" | "failed";
+type GenerationStatusItem = { id: string; source: "canvas" | "image" | "video"; status: GenerationStatus; kind?: string; title?: string; prompt?: string; projectId?: string; createdAt?: string; updatedAt?: string; successCount?: number; failCount?: number; error?: string };
 
 export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
     site_navigate: "网站跳转",
     canvas_list_projects: "画布列表",
+    generation_get_status: "生成任务状态",
     workbench_image_get_config: "生图配置",
     workbench_image_generate: "生图工作台生成",
     workbench_video_get_config: "视频配置",
@@ -37,12 +43,14 @@ export function isSiteTool(name: string): name is SiteToolName {
     return (SITE_TOOL_NAMES as readonly string[]).includes(name);
 }
 
-export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navigate: Navigate): Promise<unknown> {
+export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navigate: Navigate, context: SiteToolContext = {}): Promise<unknown> {
     switch (name) {
         case "site_navigate":
             return navigateSite(input, navigate);
         case "canvas_list_projects":
             return listCanvasProjects(input);
+        case "generation_get_status":
+            return getGenerationStatus(input, context.canvasSnapshot);
         case "workbench_image_get_config":
             return getImageConfig();
         case "workbench_image_generate":
@@ -58,6 +66,56 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
         case "assets_add":
             return addAsset(input);
     }
+}
+
+function getGenerationStatus(input: SiteToolInput, canvasSnapshot?: CanvasAgentSnapshot | null) {
+    const scope = input.scope === "canvas" || input.scope === "image" || input.scope === "video" ? input.scope : "all";
+    const taskId = typeof input.taskId === "string" ? input.taskId : "";
+    const nodeIds = new Set(Array.isArray(input.nodeIds) ? input.nodeIds.filter((id): id is string => typeof id === "string") : []);
+    const limit = Math.max(1, Math.min(100, Math.floor(Number(input.limit)) || 20));
+    const tasks: GenerationStatusItem[] = [];
+    const includeCanvas = (scope === "all" || scope === "canvas") && (!taskId || nodeIds.size > 0);
+    const includeWorkbench = !nodeIds.size || Boolean(taskId);
+
+    if (includeCanvas && canvasSnapshot) {
+        canvasSnapshot.nodes.forEach((node) => {
+            const status = normalizeCanvasGenerationStatus(node.metadata?.status);
+            if (!status || (nodeIds.size && !nodeIds.has(node.id))) return;
+            const metadata = node.metadata || {};
+            if (!nodeIds.size && node.type !== "config" && status !== "running" && status !== "failed" && !metadata.generationMode && !metadata.generationType && !metadata.model) return;
+            tasks.push({ id: node.id, source: "canvas", status, kind: metadata.generationMode || node.type, title: node.title, prompt: compactPrompt(metadata.prompt || metadata.composerContent), projectId: canvasSnapshot.projectId, error: metadata.errorDetails });
+        });
+    }
+
+    if (includeWorkbench) {
+        useWorkbenchAgentStore.getState().tasks.forEach((task) => {
+            if ((scope === "image" || scope === "video") && task.kind !== scope) return;
+            if (scope === "canvas" || (taskId && task.id !== taskId)) return;
+            tasks.push({ ...task, source: task.kind, prompt: compactPrompt(task.prompt) });
+        });
+    }
+
+    tasks.sort((a, b) => generationStatusOrder(a.status) - generationStatusOrder(b.status) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    const summary: Record<GenerationStatus, number> = { idle: 0, queued: 0, running: 0, succeeded: 0, failed: 0 };
+    tasks.forEach((task) => (summary[task.status] += 1));
+    return { total: tasks.length, summary, tasks: tasks.slice(0, limit) };
+}
+
+function generationStatusOrder(status: GenerationStatus) {
+    return status === "running" ? 0 : status === "queued" ? 1 : 2;
+}
+
+function normalizeCanvasGenerationStatus(status: unknown): GenerationStatus | null {
+    if (status === "idle") return "idle";
+    if (status === "loading") return "running";
+    if (status === "success") return "succeeded";
+    if (status === "error") return "failed";
+    return null;
+}
+
+function compactPrompt(prompt: unknown) {
+    const value = typeof prompt === "string" ? prompt.trim() : "";
+    return value ? `${value.slice(0, 200)}${value.length > 200 ? "..." : ""}` : undefined;
 }
 
 function navigateSite(input: SiteToolInput, navigate: Navigate) {
@@ -118,8 +176,8 @@ function runImageWorkbench(input: SiteToolInput, navigate: Navigate) {
     const prompt = typeof input.prompt === "string" ? input.prompt : undefined;
     const run = input.run !== false;
     navigate("/image");
-    useWorkbenchAgentStore.getState().dispatchImage({ prompt, run });
-    return { ok: true, navigated: "/image", prompt, run, applied, note: run ? "已跳转生图工作台并触发生成，结果请稍后在工作台查看" : "已跳转生图工作台并填入参数，未触发生成" };
+    const taskId = useWorkbenchAgentStore.getState().dispatchImage({ prompt, run });
+    return { ok: true, navigated: "/image", prompt, run, taskId, applied, note: run ? "已跳转生图工作台并触发生成，可用 generation_get_status 查询任务" : "已跳转生图工作台并填入参数，未触发生成" };
 }
 
 function getVideoConfig() {
@@ -165,8 +223,8 @@ function runVideoWorkbench(input: SiteToolInput, navigate: Navigate) {
     const prompt = typeof input.prompt === "string" ? input.prompt : undefined;
     const run = input.run !== false;
     navigate("/video");
-    useWorkbenchAgentStore.getState().dispatchVideo({ prompt, run });
-    return { ok: true, navigated: "/video", prompt, run, applied, note: run ? "已跳转视频创作台并触发生成，结果请稍后在工作台查看" : "已跳转视频创作台并填入参数，未触发生成" };
+    const taskId = useWorkbenchAgentStore.getState().dispatchVideo({ prompt, run });
+    return { ok: true, navigated: "/video", prompt, run, taskId, applied, note: run ? "已跳转视频创作台并触发生成，可用 generation_get_status 查询任务" : "已跳转视频创作台并填入参数，未触发生成" };
 }
 
 async function searchPrompts(input: SiteToolInput) {

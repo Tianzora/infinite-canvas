@@ -20,6 +20,7 @@ import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, retainImage, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
+import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
 import type { ReferenceImage } from "@/types/image";
 
@@ -92,6 +93,10 @@ export default function ImagePage() {
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
     const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [autoRunToken, setAutoRunToken] = useState(0);
+    const imageCommand = useWorkbenchAgentStore((state) => state.imageCommand);
+    const clearImageCommand = useWorkbenchAgentStore((state) => state.clearImageCommand);
+    const processedCommandRef = useRef(0);
 
     const model = effectiveConfig.imageModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
@@ -195,6 +200,20 @@ export default function ImagePage() {
             setRunning(false);
         }
     };
+
+    useEffect(() => {
+        if (!imageCommand || imageCommand.nonce === processedCommandRef.current) return;
+        processedCommandRef.current = imageCommand.nonce;
+        clearImageCommand();
+        if (typeof imageCommand.prompt === "string") setPrompt(imageCommand.prompt);
+        if (imageCommand.run && !running) setAutoRunToken((value) => value + 1);
+    }, [clearImageCommand, imageCommand, running]);
+
+    useEffect(() => {
+        if (!autoRunToken) return;
+        void generate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoRunToken]);
 
     const downloadImage = (image: GeneratedImage, index: number) => {
         saveAs(image.dataUrl, `image-${index + 1}.png`);

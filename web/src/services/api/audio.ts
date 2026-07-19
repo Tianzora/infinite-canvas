@@ -2,8 +2,9 @@ import axios from "axios";
 
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { normalizePluginAudio, runModelPlugin } from "./model-plugin";
 
 function aiApiUrl(config: AiConfig, path: string) {
     return config.channelMode === "remote" ? `/api/v1${path}` : buildApiUrl(config.baseUrl, path);
@@ -31,9 +32,21 @@ type RequestOptions = { signal?: AbortSignal };
 export async function requestAudioGeneration(config: AiConfig, prompt: string, options?: RequestOptions): Promise<Blob> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
-    assertAudioConfig(requestConfig, model);
     const format = normalizeAudioFormatValue(config.audioFormat);
     const instructions = config.audioInstructions.trim();
+    const script = resolveModelScript(config, config.model || config.audioModel);
+    if (script) {
+        if (!model) throw new Error("请先配置音频模型");
+        if (!requestConfig.baseUrl.trim()) throw new Error("请先配置 Base URL");
+        if (!requestConfig.apiKey.trim()) throw new Error("请先配置 API Key");
+        try {
+            const result = await runModelPlugin({ capability: "audio", script, config: requestConfig, prompt, params: { voice: normalizeAudioVoiceValue(config.audioVoice), format, speed: normalizeAudioSpeedValue(config.audioSpeed), instructions }, signal: options?.signal });
+            return await normalizePluginAudio(result, audioMimeType(format));
+        } catch (error) {
+            throw new Error(readAxiosError(error, "音频生成失败"));
+        }
+    }
+    assertAudioConfig(requestConfig, model);
 
     try {
         const response = await axios.post<Blob>(

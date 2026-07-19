@@ -18,7 +18,7 @@ type CanvasConfigNodePanelProps = {
     node: CanvasNodeData;
     isRunning: boolean;
     inputSummary: { textCount: number; imageCount: number; videoCount: number; audioCount: number };
-    onConfigChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
+    onConfigChange: (nodeId: string, patch: Partial<NonNullable<CanvasNodeMetadata>>) => void;
     onGenerate: (nodeId: string) => void;
     onComposerToggle: () => void;
     onStop: (nodeId: string) => void;

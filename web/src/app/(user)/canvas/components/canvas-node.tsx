@@ -5,11 +5,12 @@ import type { ReactNode } from "react";
 import { ChevronRight, Image as ImageIcon, Music2, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { formatBytes } from "@/lib/image-utils";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
-import type { CanvasResourceReference } from "../utils/canvas-resource-references";
+import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 const selectionBlue = "#2f80ff";
@@ -29,6 +30,7 @@ type CanvasNodeProps = {
     mentionReferences?: CanvasResourceReference[];
     renderPanel?: (node: CanvasNodeData) => ReactNode;
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
+    renderPluginContent?: (node: CanvasNodeData) => ReactNode;
     batchCount?: number;
     batchExpanded?: boolean;
     batchClosing?: boolean;
@@ -46,6 +48,7 @@ type CanvasNodeProps = {
     onRetry?: (node: CanvasNodeData) => void;
     onGenerateImage?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData) => void;
+    onPluginDoubleClick?: (node: CanvasNodeData) => boolean;
     onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
 };
 
@@ -60,6 +63,7 @@ type NodeContentRendererProps = {
     batchOpening: boolean;
     batchRecovering: boolean;
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
+    renderPluginContent?: (node: CanvasNodeData) => ReactNode;
     onContentChange: (nodeId: string, content: string) => void;
     onStopEditing: () => void;
     mentionReferences: CanvasResourceReference[];
@@ -84,6 +88,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     mentionReferences = [],
     renderPanel,
     renderNodeContent,
+    renderPluginContent,
     batchCount = 0,
     batchExpanded = false,
     batchClosing = false,
@@ -101,6 +106,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onRetry,
     onGenerateImage,
     onViewImage,
+    onPluginDoubleClick,
     onContextMenu,
 }: CanvasNodeProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -222,7 +228,7 @@ export const CanvasNode = React.memo(function CanvasNode({
             startTop: data.position.y,
             startWidth: data.width,
             startHeight: data.height,
-            keepRatio: (data.type === CanvasNodeType.Image && !data.metadata?.freeResize) || data.type === CanvasNodeType.Video,
+            keepRatio: (data.type === CanvasNodeType.Image && !data.metadata?.freeResize) || data.type === CanvasNodeType.Video || Boolean(getNodeDefinition(data.type)?.keepAspectRatio?.(data)),
             ratio: (data.metadata?.naturalWidth || data.width) / (data.metadata?.naturalHeight || data.height || 1),
         };
         window.addEventListener("mousemove", handleResizeMove);
@@ -266,6 +272,10 @@ export const CanvasNode = React.memo(function CanvasNode({
                 }}
                 onMouseDown={(event) => onMouseDown(event, data.id)}
                 onDoubleClick={(event) => {
+                    if (onPluginDoubleClick?.(data)) {
+                        event.stopPropagation();
+                        return;
+                    }
                     if (isBatchRoot) {
                         event.stopPropagation();
                         onToggleBatch?.(data.id);
@@ -305,6 +315,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         batchOpening={batchOpening}
                         batchRecovering={batchRecovering}
                         renderNodeContent={renderNodeContent}
+                        renderPluginContent={renderPluginContent}
                         mentionReferences={mentionReferences}
                         onContentChange={onContentChange}
                         onStopEditing={() => setIsEditingContent(false)}
@@ -327,7 +338,7 @@ export const CanvasNode = React.memo(function CanvasNode({
             </div>
 
             <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} />
-            <ConnectionHandleDot side="right" visible={data.type !== CanvasNodeType.Config && (hovered || isSelected || isConnecting)} onMouseDown={(event) => onConnectStart(event, data.id, "source")} />
+            <ConnectionHandleDot side="right" visible={getNodeDefinition(data.type)?.hasSourceHandle !== false && (hovered || isSelected || isConnecting)} onMouseDown={(event) => onConnectStart(event, data.id, "source")} />
 
             {showPanel && renderPanel ? <div className="absolute left-1/2 top-full z-[70] w-[500px] -translate-x-1/2 pt-4">{renderPanel(data)}</div> : null}
         </div>
@@ -341,6 +352,7 @@ function NodeContent(props: NodeContentRendererProps) {
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} />;
 
     const Renderer = nodeContentRenderers[props.node.type];
+    if (!Renderer && props.renderPluginContent) return props.renderPluginContent(props.node);
     return Renderer ? <Renderer {...props} /> : <UnknownNodeContent theme={props.theme} />;
 }
 

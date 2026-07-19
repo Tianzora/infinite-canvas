@@ -1,7 +1,8 @@
 import axios from "axios";
 
-import { buildApiUrl, defaultConfig, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, defaultConfig, resolveModelRequestConfig, resolveModelScript, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { normalizePluginImages, normalizePluginText, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -363,35 +364,44 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
     return { content: state.text, toolCalls };
 }
 
-export async function requestGeneration(config: AiConfig, prompt: string) {
-    config = resolveModelRequestConfig(config, config.model || config.imageModel);
+export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
+    const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size, isAgnesImageConfig(config));
+    const requestSize = resolveRequestSize(quality, config.size, isAgnesImageConfig(requestConfig));
     const background = normalizeBackground(config.background);
+    const script = resolveModelScript(config, config.model || config.imageModel);
+    if (script) {
+        try {
+            const result = await runModelPlugin({ capability: "image", script, config: requestConfig, prompt: withSystemPrompt(requestConfig, prompt), images: [], params: { size: requestSize, quality, count: n, background }, signal: options?.signal });
+            return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
     try {
-        if (isAgnesImageConfig(config)) {
+        if (isAgnesImageConfig(requestConfig)) {
             const response = await axios.post<ImageApiResponse>(
-                aiApiUrl(config, "/images/generations"),
+                aiApiUrl(requestConfig, "/images/generations"),
                 {
-                    model: config.model,
-                    prompt: withSystemPrompt(config, prompt),
+                    model: requestConfig.model,
+                    prompt: withSystemPrompt(requestConfig, prompt),
                     n,
                     size: requestSize || "1024x1024",
                     ...(background ? { background } : {}),
                     extra_body: { response_format: "b64_json" },
                 },
-                { headers: aiHeaders(config, "application/json") },
+                { headers: aiHeaders(requestConfig, "application/json"), signal: options?.signal },
             );
             const images = parseImagePayload(response.data);
-            refreshRemoteUser(config);
+            refreshRemoteUser(requestConfig);
             return images;
         }
         const response = await axios.post<ImageApiResponse>(
-            aiApiUrl(config, "/images/generations"),
+            aiApiUrl(requestConfig, "/images/generations"),
             {
-                model: config.model,
-                prompt: withSystemPrompt(config, prompt),
+                model: requestConfig.model,
+                prompt: withSystemPrompt(requestConfig, prompt),
                 n,
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
@@ -400,33 +410,44 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
             {
-                headers: aiHeaders(config, "application/json"),
+                headers: aiHeaders(requestConfig, "application/json"),
+                signal: options?.signal,
             },
         );
         const images = parseImagePayload(response.data);
-        refreshRemoteUser(config);
+        refreshRemoteUser(requestConfig);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
 }
 
-export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage) {
-    config = resolveModelRequestConfig(config, config.model || config.imageModel);
+export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage, options?: RequestOptions) {
+    const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size, isAgnesImageConfig(config));
+    const requestSize = resolveRequestSize(quality, config.size, isAgnesImageConfig(requestConfig));
     const background = normalizeBackground(config.background);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
-    if (isAgnesImageConfig(config)) {
+    const script = resolveModelScript(config, config.model || config.imageModel);
+    if (script) {
+        const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
+        try {
+            const result = await runModelPlugin({ capability: "image", script, config: requestConfig, prompt: withSystemPrompt(requestConfig, requestPrompt), images: refs, params: { size: requestSize, quality, count: n, background }, signal: options?.signal });
+            return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
+    if (isAgnesImageConfig(requestConfig)) {
         if (mask) throw new Error("Agnes 图片模型暂不支持蒙版编辑，请移除蒙版或切换到支持 /images/edits 的模型");
         const images = await Promise.all(references.map((image) => imageToDataUrl(image)));
         try {
             const response = await axios.post<ImageApiResponse>(
-                aiApiUrl(config, "/images/generations"),
+                aiApiUrl(requestConfig, "/images/generations"),
                 {
-                    model: config.model,
-                    prompt: withSystemPrompt(config, requestPrompt),
+                    model: requestConfig.model,
+                    prompt: withSystemPrompt(requestConfig, requestPrompt),
                     n,
                     size: requestSize || "1024x1024",
                     ...(background ? { background } : {}),
@@ -435,18 +456,18 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                         response_format: "b64_json",
                     },
                 },
-                { headers: aiHeaders(config, "application/json") },
+                { headers: aiHeaders(requestConfig, "application/json"), signal: options?.signal },
             );
             const result = parseImagePayload(response.data);
-            refreshRemoteUser(config);
+            refreshRemoteUser(requestConfig);
             return result;
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
     const formData = new FormData();
-    formData.set("model", config.model);
-    formData.set("prompt", withSystemPrompt(config, requestPrompt));
+    formData.set("model", requestConfig.model);
+    formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
     formData.set("n", String(n));
     formData.set("response_format", "b64_json");
     formData.set("output_format", IMAGE_OUTPUT_FORMAT);
@@ -464,33 +485,46 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) });
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });
         const images = parseImagePayload(response.data);
-        refreshRemoteUser(config);
+        refreshRemoteUser(requestConfig);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
 }
 
-export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void) {
+export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
+    const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
+    const script = resolveModelScript(config, config.model || config.textModel);
+    if (script) {
+        try {
+            const result = await runModelPlugin({ capability: "text", script, config: requestConfig, messages: withSystemMessage(requestConfig, messages), signal: options?.signal, onDelta });
+            const text = normalizePluginText(result).trim() || "没有返回内容";
+            if (text === "没有返回内容") onDelta(text);
+            return text;
+        } catch (error) {
+            throw new Error(readAxiosError(error, "请求失败"));
+        }
+    }
     let buffer = "";
     let answer = "";
     let processedLength = 0;
 
     try {
         const response = await axios.post(
-            aiApiUrl(config, "/chat/completions"),
+            aiApiUrl(requestConfig, "/chat/completions"),
             {
-                model: config.model,
-                messages: withSystemMessage(config, messages),
+                model: requestConfig.model,
+                messages: withSystemMessage(requestConfig, messages),
                 stream: true,
             },
             {
                 headers: {
-                    ...aiHeaders(config, "application/json"),
+                    ...aiHeaders(requestConfig, "application/json"),
                 } as Record<string, string>,
                 responseType: "text",
+                signal: options?.signal,
                 onDownloadProgress: (event) => {
                     const responseText = String(event.event?.target?.responseText || "");
                     const nextText = responseText.slice(processedLength);
@@ -531,7 +565,7 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
-    refreshRemoteUser(config);
+    refreshRemoteUser(requestConfig);
     return answer || "没有返回内容";
 }
 

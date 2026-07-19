@@ -23,7 +23,7 @@ export function startHttpServer() {
         next();
     });
     app.get("/health", (_req, res) => res.json(session.health()));
-    app.get("/config", (_req, res) => res.json({ ok: true, url: config.url, hasToken: true }));
+    app.get("/config", (_req, res) => res.json({ ok: true, url: config.url, token: config.token, hasToken: true }));
     app.use((req, res, next) => {
         if (validToken(req, requestUrl(req, config), config.token)) return next();
         res.status(401).json({ ok: false, error: "invalid token" });
@@ -97,7 +97,9 @@ export function startHttpServer() {
         console.log("Infinite Canvas Agent");
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);
-        console.log("Codex MCP: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp");
+        console.log("Codex MCP is not installed by this command.");
+        console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp");
+        console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
     });
 }
 

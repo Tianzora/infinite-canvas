@@ -1,12 +1,12 @@
 import { nanoid } from "nanoid";
 
-import { getNodeSpec } from "../constants";
+import { getNodeSpecForType } from "@/lib/canvas/node-registry";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type ViewportTransform } from "../types";
 
 export type CanvasAgentOp =
-    | { type: "add_node"; id?: string; nodeType?: CanvasNodeType; title?: string; position?: { x: number; y: number }; x?: number; y?: number; width?: number; height?: number; metadata?: CanvasNodeMetadata }
+    | { type: "add_node"; id?: string; nodeType?: string; title?: string; position?: { x: number; y: number }; x?: number; y?: number; width?: number; height?: number; metadata?: CanvasNodeMetadata }
     | { type: "update_node"; id: string; patch?: Partial<CanvasNodeData>; metadata?: CanvasNodeMetadata }
-    | { type: "delete_node"; id?: string; ids?: string[]; nodeType?: CanvasNodeType }
+    | { type: "delete_node"; id?: string; ids?: string[]; nodeType?: string }
     | { type: "delete_connections"; id?: string; ids?: string[]; all?: boolean }
     | { type: "connect_nodes"; id?: string; fromNodeId: string; toNodeId: string }
     | { type: "set_viewport"; viewport: ViewportTransform }
@@ -42,8 +42,8 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
     (Array.isArray(ops) ? ops : []).forEach((op, index) => {
         if (!op?.type) return;
         if (op.type === "add_node") {
-            const nodeType = Object.values(CanvasNodeType).includes(op.nodeType as CanvasNodeType) ? op.nodeType! : CanvasNodeType.Text;
-            const spec = getNodeSpec(nodeType);
+            const nodeType = (op.nodeType || CanvasNodeType.Text) as CanvasNodeType;
+            const spec = getNodeSpecForType(nodeType);
             const node: CanvasNodeData = {
                 id: op.id || `${nodeType}-${Date.now()}-${index}`,
                 type: nodeType,

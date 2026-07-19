@@ -1,15 +1,17 @@
 "use client";
 
 import { App, Button, Form, Input, Modal, Progress, Segmented, Select } from "antd";
-import { Cloud, RefreshCw, Wifi } from "lucide-react";
+import { Cloud, Pencil, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
 import { useState } from "react";
 
+import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
+import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ModelPicker } from "@/components/model-picker";
 import { fetchImageModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { createModelChannel, filterModelsByCapability, guessCapability, useConfigStore, useEffectiveConfig, type AiConfig, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -55,6 +57,7 @@ function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProg
 export function AppConfigModal() {
     const { message } = App.useApp();
     const [loadingModels, setLoadingModels] = useState(false);
+    const [editingChannelId, setEditingChannelId] = useState("");
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
@@ -74,6 +77,7 @@ export function AppConfigModal() {
     const effectiveMode = allowCustomChannel ? config.channelMode : "remote";
     const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
     const modelOptions = config.models.map((model) => ({ label: model, value: model }));
+    const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     const webdavReady = Boolean(webdav.url.trim());
 
     const finishConfig = () => {
@@ -124,6 +128,25 @@ export function AppConfigModal() {
         updateConfig(group.modelsKey, next);
         if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
     };
+
+    const saveConfig = (nextConfig: AiConfig) => {
+        (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
+    };
+
+    const updateChannels = (channels: ModelChannel[]) => saveConfig(withChannels(config, channels));
+    const addChannel = () => {
+        const channel = createModelChannel({ name: `渠道 ${config.channels.length + 1}` });
+        updateChannels([...config.channels, channel]);
+        setEditingChannelId(channel.id);
+    };
+    const deleteChannel = (id: string) => {
+        if (config.channels.length <= 1) {
+            message.warning("至少保留一个渠道");
+            return;
+        }
+        updateChannels(config.channels.filter((channel) => channel.id !== id));
+    };
+    const saveChannel = (channel: ModelChannel) => updateChannels(config.channels.map((item) => item.id === channel.id ? channel : item));
 
     const testWebdav = async () => {
         if (!webdavReady) {
@@ -238,6 +261,7 @@ export function AppConfigModal() {
                         </div>
                     )}
                     {effectiveMode === "local" ? (
+                        <>
                         <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                             <div className="mb-3">
                                 <div className="text-sm font-semibold">本地模型可选项</div>
@@ -260,6 +284,16 @@ export function AppConfigModal() {
                                 ))}
                             </div>
                         </section>
+                        <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                                <div><div className="text-sm font-semibold">本地渠道脚本</div><div className="mt-1 text-xs text-stone-500">为每个本地渠道模型配置自定义异步调用脚本，留空继续使用现有兼容接口。</div></div>
+                                <Button type="primary" size="small" icon={<Plus className="size-4" />} onClick={addChannel}>新增渠道</Button>
+                            </div>
+                            <div className="space-y-2">
+                                {config.channels.length ? config.channels.map((channel) => <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800"><div className="min-w-0"><div className="truncate text-sm font-semibold">{channel.name || "未命名渠道"}</div><div className="mt-1 truncate text-xs text-stone-500">{channel.models.length} 个模型 · {Object.keys(channel.modelScripts || {}).length} 个脚本 · {channel.baseUrl || "未填写接口地址"}</div></div><div className="flex shrink-0 gap-2"><Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>编辑</Button><Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} /></div></div>) : <div className="py-4 text-center text-sm text-stone-500">尚未配置本地渠道。</div>}
+                            </div>
+                        </section>
+                        </>
                     ) : null}
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         {modelGroups.map((group) => (
@@ -371,10 +405,30 @@ export function AppConfigModal() {
                             </div>
                         ) : null}
                     </section>
+                    <section className="mt-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                        <div className="mb-3">
+                            <div className="text-sm font-semibold">提示词来源</div>
+                            <div className="mt-1 text-xs text-stone-500">在浏览器本地管理远程提示词脚本、启停来源和定时拉取。</div>
+                        </div>
+                        <ConfigPromptSources />
+                    </section>
                 </Form>
             </div>
+            <ChannelEditorDrawer open={Boolean(editingChannel)} channel={editingChannel} onSave={saveChannel} onClose={() => setEditingChannelId("")} />
         </Modal>
     );
+}
+
+function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
+    const models = uniqueModels(channels.flatMap((channel) => channel.models));
+    const next = { ...config, channels, models };
+    for (const group of modelGroups) {
+        const inferred = models.filter((model) => guessCapability(model) === group.capability);
+        const available = uniqueModels([...config[group.modelsKey].filter((model) => models.includes(model)), ...inferred]);
+        next[group.modelsKey] = available;
+        if (!available.includes(next[group.modelKey])) next[group.modelKey] = available[0] || "";
+    }
+    return next;
 }
 
 function normalizeImageCount(value: string) {

@@ -28,6 +28,20 @@ Connect token: xxxxxx
 
 Canvas Agent 默认只监听 `127.0.0.1`。网页第一次带正确 token 连接后，Canvas Agent 会记录该网页 Origin；之后其他 Origin 不能复用这个本地 Agent，除非用户清理 `~/.infinite-canvas/canvas-agent.json` 里的 `origins`。
 
+直接运行 Agent 只启动本地服务，不会自动安装 MCP。需要在 Codex 上下文中使用画布工具时，再手动添加 MCP：
+
+```bash
+codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp
+```
+
+移除手动添加的 MCP：
+
+```bash
+codex mcp remove infinite-canvas
+```
+
+当前 Agent 还会把网页侧的画布列表、工作台生图/视频、提示词搜索和“我的素材”查询/写入能力暴露给 Codex；这些工具要求浏览器画布已连接到本地 Agent。
+
 ## 发布
 
 `canvas-agent` 使用自己的 `package.json` 版本号，不跟仓库根目录 `VERSION` 绑定。推送到 `main` 后，GitHub Actions 会检查 npm 上是否已经存在当前包版本；不存在时才发布 `@basketikun/canvas-agent`。

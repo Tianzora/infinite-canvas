@@ -15,6 +15,7 @@ export type ModelChannel = {
     baseUrl: string;
     apiKey: string;
     models: string[];
+    modelScripts?: Record<string, string>;
 };
 
 
@@ -23,6 +24,7 @@ export type AiConfig = {
     baseUrl: string;
     apiKey: string;
     channels: ModelChannel[];
+    modelScripts?: Record<string, string>;
     model: string;
     imageModel: string;
     videoModel: string;
@@ -45,6 +47,7 @@ export type AiConfig = {
     audioModels: string[];
     quality: string;
     size: string;
+    background: string;
     count: string;
     canvasImageCount: string;
     modelProtocol?: string;
@@ -68,6 +71,7 @@ export const defaultConfig: AiConfig = {
     baseUrl: "https://api.openai.com",
     apiKey: "",
     channels: [],
+    modelScripts: {},
     model: "gpt-image-2",
     imageModel: "gpt-image-2",
     videoModel: "grok-imagine-video",
@@ -90,6 +94,7 @@ export const defaultConfig: AiConfig = {
     audioModels: [],
     quality: "auto",
     size: "1:1",
+    background: "",
     count: "1",
     canvasImageCount: "3",
 };
@@ -170,6 +175,13 @@ function isImageModelName(model: string) {
 function isAudioModelName(model: string) {
     const value = model.toLowerCase();
     return value.includes("audio") || value.includes("tts") || value.includes("speech") || value.includes("voice") || value.includes("music") || value.includes("sound");
+}
+
+export function guessCapability(model: string): ModelCapability {
+    if (isVideoModelName(model)) return "video";
+    if (isAudioModelName(model)) return "audio";
+    if (isImageModelName(model)) return "image";
+    return "text";
 }
 
 function isTextModelName(model: string, aliases?: AdminPublicSettings["modelChannel"]["modelAliases"]) {
@@ -291,6 +303,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         baseUrl: channel?.baseUrl?.trim() || "https://api.openai.com",
         apiKey: channel?.apiKey || "",
         models: uniqueRawModels(channel?.models || []),
+        modelScripts: normalizeModelScripts(channel?.modelScripts),
     };
 }
 
@@ -366,6 +379,13 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
     };
 }
 
+export function resolveModelScript(config: AiConfig, value: string) {
+    const selected = (value || config.model || "").trim();
+    const model = modelOptionName(selected).trim();
+    const channel = resolveModelChannel(config, selected);
+    return (channel.modelScripts?.[model] || channel.modelScripts?.[selected] || config.modelScripts?.[model] || config.modelScripts?.[selected] || "").trim();
+}
+
 function normalizeChannels(config: AiConfig) {
     const persistedChannels = Array.isArray(config.channels) ? config.channels : [];
     const channels = persistedChannels.map((channel, index) =>
@@ -374,6 +394,7 @@ function normalizeChannels(config: AiConfig) {
             id: channel.id || (index === 0 ? "default" : `channel-${index + 1}`),
             name: channel.name || (index === 0 ? "默认渠道" : `channel ${index + 1}`),
             models: uniqueRawModels(channel.models || []),
+            modelScripts: normalizeModelScripts(channel.modelScripts),
         }),
     );
     if (!channels.length) {
@@ -391,10 +412,19 @@ function normalizeChannels(config: AiConfig) {
                     config.textModel,
                     config.audioModel,
                 ]),
+                modelScripts: normalizeModelScripts(config.modelScripts),
             }),
         );
     }
     return channels.map((channel) => ({ ...channel, models: uniqueRawModels(channel.models) }));
+}
+
+function normalizeModelScripts(scripts: Record<string, string> | undefined) {
+    return Object.fromEntries(
+        Object.entries(scripts || {})
+            .map(([model, script]) => [modelOptionName(model).trim(), typeof script === "string" ? script.trim() : ""] as const)
+            .filter(([model, script]) => Boolean(model && script)),
+    );
 }
 
 function uniqueRawModels(models: string[]) {
